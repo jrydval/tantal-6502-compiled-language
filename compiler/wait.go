@@ -1,9 +1,9 @@
 package compiler
 
 import (
-	"tantal/asm"
-	"tantal/cpu"
-	"tantal/lang"
+	"github.com/jrydval/tantal/asm"
+	"github.com/jrydval/tantal/cpu"
+	"github.com/jrydval/tantal/lang"
 )
 
 // timeoutPlan: how to program the RIOT timer for a given timeout.

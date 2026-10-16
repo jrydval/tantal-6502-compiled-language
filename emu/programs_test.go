@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"tantal/compiler"
+	"github.com/jrydval/tantal/compiler"
 )
 
 // run compiles the source and runs it in the emulator.

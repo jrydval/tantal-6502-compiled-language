@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"tantal/asm"
-	"tantal/lang"
+	"github.com/jrydval/tantal/asm"
+	"github.com/jrydval/tantal/lang"
 )
 
 // Version is the compiler version.

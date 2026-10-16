@@ -32,9 +32,19 @@ Design points:
 - **Predictable code.** Each construct has a known translation. The listing shows the generated instructions and the cycle count for every source line.
 - **Machine described by a file.** Memory map, I/O registers and monitor routines come from a target file; `pal2` is built in.
 
-## Building
+## Installing
+
+With Go 1.22 or newer:
 
 ```
+go install github.com/jrydval/tantal/cmd/tantal@latest
+```
+
+Or build from a clone:
+
+```
+git clone https://github.com/jrydval/tantal.git
+cd tantal
 go build -o tantal ./cmd/tantal
 go test ./...
 ```

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"tantal/asm"
+	"github.com/jrydval/tantal/asm"
 )
 
 //go:embed targets/*

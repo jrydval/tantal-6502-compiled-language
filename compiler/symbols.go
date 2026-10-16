@@ -1,8 +1,8 @@
 package compiler
 
 import (
-	"tantal/asm"
-	"tantal/lang"
+	"github.com/jrydval/tantal/asm"
+	"github.com/jrydval/tantal/lang"
 )
 
 // Type is the type of a value.

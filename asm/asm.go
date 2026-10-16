@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"tantal/cpu"
+	"github.com/jrydval/tantal/cpu"
 )
 
 // Operand parts.

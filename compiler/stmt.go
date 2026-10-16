@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"tantal/asm"
-	"tantal/cpu"
-	"tantal/lang"
+	"github.com/jrydval/tantal/asm"
+	"github.com/jrydval/tantal/cpu"
+	"github.com/jrydval/tantal/lang"
 )
 
 func (g *gen) stmts(ss []lang.Stmt) {

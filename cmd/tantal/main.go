@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"tantal/compiler"
-	"tantal/emu"
+	"github.com/jrydval/tantal/compiler"
+	"github.com/jrydval/tantal/emu"
 )
 
 const usage = `Tantal %s - compiler for the Tantal language for the 6502
