@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jrydval/tantal/compiler"
-	"github.com/jrydval/tantal/cpu"
+	"github.com/jrydval/tantal-6502-compiled-language/compiler"
+	"github.com/jrydval/tantal-6502-compiled-language/cpu"
 )
 
 type timedVal struct {

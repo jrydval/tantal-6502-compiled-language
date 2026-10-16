@@ -1,9 +1,9 @@
 package compiler
 
 import (
-	"github.com/jrydval/tantal/asm"
-	"github.com/jrydval/tantal/cpu"
-	"github.com/jrydval/tantal/lang"
+	"github.com/jrydval/tantal-6502-compiled-language/asm"
+	"github.com/jrydval/tantal-6502-compiled-language/cpu"
+	"github.com/jrydval/tantal-6502-compiled-language/lang"
 )
 
 // gen generates code for one procedure instance (or the main program).

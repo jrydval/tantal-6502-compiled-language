@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jrydval/tantal/cpu"
+	"github.com/jrydval/tantal-6502-compiled-language/cpu"
 )
 
 // Line is a parsed line of inline assembler.

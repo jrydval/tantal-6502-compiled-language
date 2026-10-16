@@ -37,14 +37,14 @@ Design points:
 With Go 1.22 or newer:
 
 ```
-go install github.com/jrydval/tantal/cmd/tantal@latest
+go install github.com/jrydval/tantal-6502-compiled-language/cmd/tantal@latest
 ```
 
 Or build from a clone:
 
 ```
-git clone https://github.com/jrydval/tantal.git
-cd tantal
+git clone https://github.com/jrydval/tantal-6502-compiled-language.git
+cd tantal-6502-compiled-language
 go build -o tantal ./cmd/tantal
 go test ./...
 ```
