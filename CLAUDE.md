@@ -7,7 +7,7 @@ This file carries the design decisions and project state for anyone (human or AI
 - Tantal is a small compiled language for the MOS 6502, inspired by Action! for the Atari: fast prototyping, no boilerplate, constructs that map closely to 6502 instructions.
 - The primary target is the **PAL-2**, a modernized KIM-1 clone built by the maintainer. The first intended application is a simple **logic analyzer**: watch a sequence of signals on the user port and show information on the onboard display.
 - The compiler is written in Go (1.22+), has no dependencies and must build for macOS, Linux and Windows.
-- The full language specification (v0.1) was drafted in Czech in a separate document; this file summarizes the decisions that matter for the code.
+- The full language specification (v0.1) is in Czech: [docs/spec-cs.md](docs/spec-cs.md), a Markdown export of the Claude Docs document "Tantal – jazyk pro 6502: specifikace v0.1" (https://claude.ai/code/artifact/ee52ff92-2650-454d-bede-b9b6af2be70c). This file summarizes the decisions that matter for the code. The English tutorial is [docs/tutorial.md](docs/tutorial.md).
 
 ## PAL-2 hardware facts
 
