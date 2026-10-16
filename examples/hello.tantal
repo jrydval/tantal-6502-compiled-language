@@ -1,0 +1,18 @@
+; Nejjednodušší program: vypíše text na TTY a sečte čísla 1..10
+byte i
+card sum
+
+for i = 1 to 10 do
+  sum += i
+od
+
+proc print(byte pointer s)
+  byte k
+  for k = 1 to s[0] do
+    OUTCH(s[k])
+  od
+endproc
+
+print("AHOJ")
+CRLF()
+PRTBYT(lo(sum))

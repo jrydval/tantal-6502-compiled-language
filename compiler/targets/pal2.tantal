@@ -1,0 +1,46 @@
+; pal2.tantal – předdefinované registry a rutiny monitoru PAL-2
+; Zdroj adres: KIM-1 Quick Reference (Jeff Tranter); PAL-2 má mapu jako KIM-1.
+
+; uživatelský RIOT, porty na aplikačním konektoru
+byte PAD   @ $1700
+byte PADD  @ $1701
+byte PBD   @ $1702
+byte PBDD  @ $1703
+
+; systémový RIOT: displej, klávesnice (používá ho i monitor)
+byte SYS_PA   @ $1740
+byte SYS_PADD @ $1741
+byte SYS_PB   @ $1742
+byte SYS_PBDD @ $1743
+
+; časovač uživatelského RIOT: zápis spustí odpočet s daným dělitelem
+byte TIM1     @ $1704 writeonly    ; 1 µs, bez přerušení
+byte TIM8     @ $1705 writeonly
+byte TIM64    @ $1706 writeonly
+byte TIM1024  @ $1707 writeonly
+byte TIM1I    @ $170C writeonly    ; 1 µs, s přerušením
+byte TIM8I    @ $170D writeonly
+byte TIM64I   @ $170E writeonly
+byte TIM1024I @ $170F writeonly
+
+; časovač: čtení
+byte TIMCNT   @ $1706 readonly     ; stav čítače, vypne přerušení
+byte TIMCNTI  @ $170E readonly     ; stav čítače, zapne přerušení
+byte TIMSTAT  @ $1707 readonly
+bit  TIMEOUT  = TIMSTAT.7          ; 1 = odpočet doběhl
+
+; rutiny monitoru
+extern proc OUTCH(byte c @A)   @ $1EA0   ; znak na TTY
+extern proc PRTBYT(byte b @A)  @ $1E3B   ; bajt hexa na TTY
+extern proc OUTSP()            @ $1E9E   ; mezera na TTY
+extern proc CRLF()             @ $1E2F
+extern proc GETCH(): byte @A   @ $1E5A   ; znak z TTY
+extern proc SCANDS()           @ $1F1F   ; displej z $F9–$FB
+extern proc KEYIN()            @ $1F40
+extern proc GETKEY(): byte @A  @ $1F6A   ; klávesa 0–$15
+
+byte DISP0 @ $F9   ; buffer displeje monitoru
+byte DISP1 @ $FA
+byte DISP2 @ $FB
+
+byte[] SEG7_HEX @ $1FE7 readonly   ; 7seg vzory číslic 0–F v ROM (TABLE)

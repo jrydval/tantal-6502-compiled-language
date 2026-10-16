@@ -1,0 +1,35 @@
+; Aritmetika: byte, card, násobení, dělení, posuny, porovnání
+byte a = 200
+byte b = 7
+card x = 1000
+card y
+byte r_add, r_sub, r_mul, r_div, r_mod, r_shl, r_shr, r_neg
+card w_mul, w_div, w_mod, w_add, w_sub, w_shl
+byte c_lt, c_gt, c_eq, c_le, c_ge, c_ne, cw_lt, cw_gt
+byte d0
+
+r_add = a + b          ; 207
+r_sub = b - a          ; 7 - 200 = 63 (přetečení)
+r_mul = b * 9          ; 63
+r_div = a / b          ; 28
+r_mod = a mod b        ; 4
+r_shl = b << 3         ; 56
+r_shr = a >> 2         ; 50
+r_neg = -b             ; 249
+w_mul = card(a) * b    ; 1400
+w_div = x / 30         ; 33
+w_mod = x mod 30       ; 10
+w_add = x + a          ; 1200
+w_sub = x - 1001       ; 65535
+w_shl = x << 4         ; 16000
+y = x * 8 + 3          ; 8003
+d0 = a / 0             ; $FF podle specifikace
+
+if b < a then c_lt = 1 fi
+if a > b then c_gt = 1 fi
+if a = 200 then c_eq = 1 fi
+if b <= 7 then c_le = 1 fi
+if a >= 201 then c_ge = 1 fi
+if a <> b and b <> 0 then c_ne = 1 fi
+if x < 1001 then cw_lt = 1 fi
+if y > x then cw_gt = 1 fi

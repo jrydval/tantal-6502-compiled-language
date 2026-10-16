@@ -1,0 +1,35 @@
+; Procedury: parametry v registrech i ve slotech, návratové hodnoty, overlay
+byte r1, r2, r3
+card r4, r5
+
+proc add3(byte a, byte b, byte c): byte
+  return a + b + c
+endproc
+
+proc mix(byte a, card b, byte c, byte d): card
+  card t
+  t = b + a
+  t = t + c
+  return t + d
+endproc
+
+proc square(byte v): card
+  return card(v) * v
+endproc
+
+proc sumsq(byte a, byte b): card
+  return square(a) + square(b)
+endproc
+
+proc max(byte a, byte b): byte
+  if a > b then
+    return a
+  fi
+  return b
+endproc
+
+r1 = add3(1, 2, 3)                 ; 6
+r2 = add3(add3(1, 1, 1), 10, 20)   ; 33
+r3 = max(max(5, 9), 7)             ; 9
+r4 = mix(1, 1000, 2, 3)            ; 1006
+r5 = sumsq(30, 40)                 ; 2500

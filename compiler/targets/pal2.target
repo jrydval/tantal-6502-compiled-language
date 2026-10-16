@@ -1,0 +1,17 @@
+# pal2.target – počítač PAL-2 (modernizovaný KIM-1)
+cpu        = 6502              ; NMOS, zatím bez 65C02
+clock      = 1000000           ; Hz, 1 MHz
+ram        = $0000-$16FF, $2000-$FFF7
+org        = $2000
+vars       = after-code        ; po vyčerpání zero page
+reserve    = $0200-$16FF       ; loader, uživatel
+reserve    = $1750-$177F       ; neověřeno, mezera nebo zrcadlo RIOT
+zp.free    = $00-$EE
+vector.irq = $17FE
+vector.nmi = $17FA
+exit       = $1C4F             ; START, návrat do monitoru
+brk        = $1C00             ; SAVE, kam obsluha IRQ předá instrukci BRK
+timeout.timer = $1704          ; časovač pro wait ... timeout
+rom        = $1800-$1FFF       ; ROM monitoru (emulátor jen zaznamená volání)
+io         = $1700-$177F
+include    = pal2.tantal

@@ -1,0 +1,48 @@
+; Řetězce, ukazatele, mem[] a const tabulky
+string msg = "TANTAL"
+string[16] line
+const byte[] HEX = '0', '1', '2', '3', '4', '5', '6', '7',
+                   '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
+byte[8] buf = 1, 2, 3
+byte pointer p
+byte i, n, peek, total
+card addr
+
+proc puts(byte pointer s)
+  byte k
+  for k = 1 to len(s) do
+    OUTCH(s[k])
+  od
+endproc
+
+proc hex(byte v)
+  OUTCH(HEX[v >> 4])
+  OUTCH(HEX[v & $0F])
+endproc
+
+proc copy(byte pointer src, byte pointer dst)
+  byte k
+  for k = 0 to src[0] do
+    dst[k] = src[k]
+  od
+endproc
+
+puts(@msg)
+OUTSP()
+copy(@msg, @line)
+line[1] = 'M'
+puts(@line)
+CRLF()
+hex($A5)
+n = len(msg)
+
+p = @buf
+p[3] = 40
+p += 1
+for i = 0 until 7 do
+  total += p[i]          ; 2 + 3 + 40 = 45
+od
+
+mem[$0300] = $55
+addr = $0300
+peek = mem[addr] + 1     ; $56
