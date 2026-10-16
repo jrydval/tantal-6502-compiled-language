@@ -6,17 +6,17 @@ import (
 	"tantal/lang"
 )
 
-// gen generuje kód jedné instance procedury (nebo hlavního programu).
+// gen generates code for one procedure instance (or the main program).
 type gen struct {
 	c        *Compiler
 	p        *asm.Program
 	inst     *Inst
 	tempTop  int
 	loops    []string
-	atomicAt []int // hloubka smyček při vstupu do atomic
+	atomicAt []int // loop depth when entering atomic
 }
 
-// val je jednoduchý operand: okamžitá hodnota nebo místo v paměti.
+// val is a simple operand: an immediate value or a memory location.
 type val struct {
 	imm bool
 	op  asm.Operand
@@ -61,7 +61,7 @@ func (v val) hi() part {
 
 func memVal(op asm.Operand, t Type) val { return val{op: op, t: t} }
 
-// ---- emise ----
+// ---- emitting ----
 
 func (g *gen) at(pos lang.Pos) {
 	g.p.CurLine = pos.Line
@@ -72,7 +72,7 @@ func (g *gen) e(mn string, m cpu.Mode, op asm.Operand) { g.p.I(mn, m, op) }
 func (g *gen) imp(mn string)                           { g.p.Imp(mn) }
 func (g *gen) imm(mn string, v int)                    { g.p.I(mn, cpu.Imm, asm.N(v&0xFF)) }
 func (g *gen) mem(mn string, op asm.Operand) {
-	// LDA hned po STA na stejnou (ne pevnou) adresu je zbytečné
+	// LDA right after STA to the same (non-fixed) address is redundant
 	if mn == "LDA" && op.Sym != "" {
 		if last := g.p.Last(); last != nil && last.Mnem == "STA" && last.Mode == asm.Auto && last.Arg == op {
 			return
@@ -99,7 +99,7 @@ func (g *gen) part(mn string, p part) {
 
 func (g *gen) fail(pos lang.Pos, f string, a ...any) { g.c.fail(pos, f, a...) }
 
-// ---- dočasné proměnné v rámci instance ----
+// ---- temporaries in the instance frame ----
 
 func (g *gen) localSize() int {
 	if g.inst.Proc == nil {
@@ -119,7 +119,7 @@ func (g *gen) temp(n int) asm.Operand {
 
 func (g *gen) free(n int) { g.tempTop -= n }
 
-// ---- symboly ----
+// ---- symbols ----
 
 func (g *gen) lookup(name string) any {
 	if name == "timedout" {
@@ -139,7 +139,7 @@ func (g *gen) vop(v *Var) asm.Operand {
 		return asm.N(v.Addr)
 	case v.Proc != nil && !v.Static:
 		if g.inst.Proc != v.Proc {
-			g.c.fail(v.Pos, "interní chyba: přístup k lokální proměnné jiné procedury")
+			g.c.fail(v.Pos, "internal error: access to a local variable of another procedure")
 		}
 		return asm.S(g.inst.FrameSym, v.Off)
 	}
@@ -155,7 +155,7 @@ func (c *Compiler) useTimedOut() *Var {
 	return c.timedOut
 }
 
-// track zaznamená úpravu sdílené proměnné (čtení, úprava, zápis).
+// track records a read-modify-write of a possibly shared variable.
 func (g *gen) track(name string, pos lang.Pos) {
 	atomic := len(g.atomicAt) > 0 || (g.inst.Proc != nil && g.inst.Proc.Interrupt != "")
 	g.c.shared[name] = append(g.c.shared[name], access{ctx: g.inst.Ctx, atomic: atomic, pos: pos})
@@ -186,12 +186,12 @@ func (c *Compiler) useRT() asm.Operand {
 	return asm.S("__rt", 0)
 }
 
-// ---- konstanty ----
+// ---- constants ----
 
 func (c *Compiler) mustConst(e lang.Expr) int {
 	v, ok := c.constEval(e)
 	if !ok {
-		c.fail(e.P(), "očekávána konstanta")
+		c.fail(e.P(), "constant expected")
 	}
 	return v
 }
@@ -310,7 +310,7 @@ func b2i(b bool) int {
 	return 0
 }
 
-// constOp: konstanta nebo symbolická adresa (globální proměnná, řetězcový literál).
+// constOp: a constant or a symbolic address (global variable, string literal).
 func (c *Compiler) constOp(e lang.Expr) (asm.Operand, bool) {
 	if v, ok := c.constEval(e); ok {
 		return asm.N(v), true
@@ -353,7 +353,7 @@ func (c *Compiler) strLit(s *lang.Str) string {
 		return l
 	}
 	if len(s.S) > 255 {
-		c.fail(s.Pos, "řetězec je delší než 255 znaků")
+		c.fail(s.Pos, "string is longer than 255 characters")
 	}
 	l := c.newLabel("str")
 	c.strLits[key] = l
@@ -374,7 +374,7 @@ func (c *Compiler) strLit(s *lang.Str) string {
 	return l
 }
 
-// ---- typy ----
+// ---- types ----
 
 func (g *gen) typeOf(e lang.Expr) Type {
 	switch x := e.(type) {
@@ -400,9 +400,9 @@ func (g *gen) typeOf(e lang.Expr) Type {
 			}
 			return TCard
 		case nil:
-			g.fail(x.Pos, "neznámé jméno %q", x.Name)
+			g.fail(x.Pos, "unknown name %q", x.Name)
 		}
-		g.fail(x.Pos, "%s nelze použít jako hodnotu", x.Name)
+		g.fail(x.Pos, "%s cannot be used as a value", x.Name)
 	case *lang.Index, *lang.BitRef, *lang.Wait:
 		return TByte
 	case *lang.Unary:
@@ -468,12 +468,12 @@ func (g *gen) typeOf(e lang.Expr) Type {
 			}
 			return p.Ret
 		}
-		g.fail(x.Pos, "neznámá procedura %q", x.Name)
+		g.fail(x.Pos, "unknown procedure %q", x.Name)
 	}
 	return TByte
 }
 
-// simple vrací operand bez vedlejších účinků, pokud výraz žádný kód nepotřebuje.
+// simple returns a side-effect-free operand when the expression needs no code.
 func (g *gen) simple(e lang.Expr) (val, bool) {
 	if v, ok := g.c.constEval(e); ok {
 		t := TByte
@@ -500,7 +500,7 @@ func (g *gen) simple(e lang.Expr) (val, bool) {
 					in := g.instFor(p, id.Pos)
 					return val{imm: true, op: asm.S(in.Label, 0), t: TAddr}, true
 				}
-				g.fail(x.Pos, "@ vyžaduje proměnnou")
+				g.fail(x.Pos, "@ needs a variable")
 			}
 			return val{imm: true, op: g.vop(v), t: TAddr}, true
 		}
@@ -521,7 +521,7 @@ func (g *gen) simple(e lang.Expr) (val, bool) {
 		}
 		g.checkIndex(v, k, x.Pos)
 		if v.WriteOnly {
-			g.fail(x.Pos, "%s je jen pro zápis", v.Name)
+			g.fail(x.Pos, "%s is write-only", v.Name)
 		}
 		op := g.vop(v)
 		op.Off += k
@@ -532,24 +532,24 @@ func (g *gen) simple(e lang.Expr) (val, bool) {
 
 func (g *gen) checkIndex(v *Var, k int, pos lang.Pos) {
 	if k < 0 || (v.Len > 0 && k >= v.Len) {
-		g.fail(pos, "index %d je mimo pole %s (velikost %d)", k, v.Name, v.Len)
+		g.fail(pos, "index %d is outside array %s (size %d)", k, v.Name, v.Len)
 	}
 }
 
-// readOp: operand pro čtení skalární proměnné (shadow registr se čte z kopie).
+// readOp: operand for reading a scalar variable (a shadow register is read from its copy).
 func (g *gen) readOp(v *Var, pos lang.Pos) asm.Operand {
 	if v.Shadow != nil {
 		return asm.S(v.Shadow.Label, 0)
 	}
 	if v.WriteOnly {
-		g.fail(pos, "%s je jen pro zápis", v.Name)
+		g.fail(pos, "%s is write-only", v.Name)
 	}
 	return g.vop(v)
 }
 
-// ---- výrazy ----
+// ---- expressions ----
 
-// genByte spočítá výraz do A.
+// genByte evaluates an expression into A.
 func (g *gen) genByte(e lang.Expr) {
 	if v, ok := g.simple(e); ok {
 		g.part("LDA", v.lo())
@@ -571,9 +571,9 @@ func (g *gen) genByte(e lang.Expr) {
 			g.bitValue(s, x.Pos)
 			return
 		case *Var:
-			g.fail(x.Pos, "pole %s nelze použít jako hodnotu (adresa je @%s)", s.Name, s.Name)
+			g.fail(x.Pos, "array %s cannot be used as a value (its address is @%s)", s.Name, s.Name)
 		}
-		g.fail(x.Pos, "%s nelze použít jako hodnotu", x.Name)
+		g.fail(x.Pos, "%s cannot be used as a value", x.Name)
 	case *lang.Index:
 		g.indexLoad(x)
 	case *lang.BitRef:
@@ -602,7 +602,7 @@ func (g *gen) genByte(e lang.Expr) {
 	case *lang.Wait:
 		g.genWait(x)
 	default:
-		g.fail(e.P(), "nepodporovaný výraz")
+		g.fail(e.P(), "unsupported expression")
 	}
 }
 
@@ -679,7 +679,7 @@ func (g *gen) byteShift(x *lang.Binary) {
 	g.label(done)
 }
 
-// genWord spočítá výraz do A (dolní bajt) a X (horní bajt).
+// genWord evaluates an expression into A (low byte) and X (high byte).
 func (g *gen) genWord(e lang.Expr) {
 	t := g.typeOf(e)
 	if v, ok := g.simple(e); ok {
@@ -723,12 +723,12 @@ func (g *gen) genWord(e lang.Expr) {
 		case "*", "/", "mod":
 			g.mulDiv(x, true)
 		default:
-			g.fail(x.Pos, "operátor %s nedává 16bitovou hodnotu", x.Op)
+			g.fail(x.Pos, "operator %s does not produce a 16-bit value", x.Op)
 		}
 	case *lang.Call:
 		g.call(x)
 	default:
-		g.fail(e.P(), "nepodporovaný 16bitový výraz")
+		g.fail(e.P(), "unsupported 16-bit expression")
 	}
 }
 
@@ -832,7 +832,7 @@ func log2(n int) (int, bool) {
 	return k, true
 }
 
-// mulDiv: * / mod. Mocniny 2 jako posuny a maskování, jinak běhová rutina.
+// mulDiv: * / mod. Powers of 2 become shifts and masks, otherwise a runtime routine.
 func (g *gen) mulDiv(x *lang.Binary, wide bool) {
 	if n, ok := g.c.constEval(x.R); ok {
 		if k, ok := log2(n); ok {
@@ -881,7 +881,7 @@ func (g *gen) mulDiv(x *lang.Binary, wide bool) {
 	}
 }
 
-// genBool spočítá logickou hodnotu do A jako 0 nebo 1.
+// genBool evaluates a boolean into A as 0 or 1.
 func (g *gen) genBool(e lang.Expr) {
 	if v, ok := g.c.constEval(e); ok {
 		g.imm("LDA", b2i(v != 0))
@@ -896,7 +896,7 @@ func (g *gen) genBool(e lang.Expr) {
 	g.label(end)
 }
 
-// ensureFlags zajistí, že příznaky Z a N odpovídají A.
+// ensureFlags makes sure the Z and N flags reflect A.
 func (g *gen) ensureFlags() {
 	last := g.p.Last()
 	if last != nil {
@@ -915,7 +915,7 @@ func (g *gen) ensureFlags() {
 var invertRel = map[string]string{"=": "<>", "<>": "=", "<": ">=", ">=": "<", ">": "<=", "<=": ">"}
 var swapRel = map[string]string{"=": "=", "<>": "<>", "<": ">", ">": "<", "<=": ">=", ">=": "<="}
 
-// cond skočí na label, když má výraz hodnotu jit (true/false).
+// cond jumps to label when the expression equals jit (true/false).
 func (g *gen) cond(e lang.Expr, label string, jit bool) {
 	if v, ok := g.c.constEval(e); ok {
 		if (v != 0) == jit {
@@ -988,7 +988,7 @@ func (g *gen) cond(e lang.Expr, label string, jit bool) {
 	}
 }
 
-// singleBit vrací bit, pokud výraz je jednobitový alias nebo X.n.
+// singleBit returns the bit if the expression is a single-bit alias or X.n.
 func (g *gen) singleBit(e lang.Expr) (*Bit, bool) {
 	switch x := e.(type) {
 	case *lang.Ident:
@@ -1126,12 +1126,12 @@ func (g *gen) wordCompare(x *lang.Binary, label string, jit bool) {
 	g.free(used)
 }
 
-// ---- bity ----
+// ---- bits ----
 
 func (g *gen) bitOf(x *lang.BitRef) *Bit {
 	v, ok := g.lookup(x.Base).(*Var)
 	if !ok || !v.Scalar() || v.Elem != TByte || v.Pointer {
-		g.fail(x.Pos, "%s není byte proměnná nebo registr", x.Base)
+		g.fail(x.Pos, "%s is not a byte variable or register", x.Base)
 	}
 	return &Bit{Name: x.Base, Reg: v, Lo: x.Lo, Hi: x.Hi}
 }
@@ -1177,10 +1177,10 @@ func (g *gen) bitValue(b *Bit, pos lang.Pos) {
 	}
 }
 
-// storeTo zapíše A do skalární byte proměnné (u shadow do kopie i registru).
+// storeTo stores A into a scalar byte variable (for shadow into both the copy and the register).
 func (g *gen) storeTo(v *Var, pos lang.Pos) {
 	if v.ReadOnly {
-		g.fail(pos, "%s je jen pro čtení", v.Name)
+		g.fail(pos, "%s is read-only", v.Name)
 	}
 	if v.Shadow != nil {
 		g.mem("STA", asm.S(v.Shadow.Label, 0))
@@ -1191,10 +1191,10 @@ func (g *gen) storeTo(v *Var, pos lang.Pos) {
 func (g *gen) bitAssign(b *Bit, op string, value lang.Expr, pos lang.Pos) {
 	r := b.Reg
 	if r.ReadOnly {
-		g.fail(pos, "%s je jen pro čtení", r.Name)
+		g.fail(pos, "%s is read-only", r.Name)
 	}
 	if r.WriteOnly && r.Shadow == nil {
-		g.fail(pos, "%s je jen pro zápis; zápis bitu potřebuje shadow", r.Name)
+		g.fail(pos, "%s is write-only; writing a bit needs shadow", r.Name)
 	}
 	g.track(r.Name, pos)
 	src := g.bitSrc(b, pos)
@@ -1203,7 +1203,7 @@ func (g *gen) bitAssign(b *Bit, op string, value lang.Expr, pos lang.Pos) {
 	if op == "^=" {
 		c, ok := g.c.constEval(value)
 		if !ok {
-			g.fail(pos, "^= u bitu vyžaduje konstantu")
+			g.fail(pos, "^= on a bit needs a constant")
 		}
 		g.mem("LDA", src)
 		g.imm("EOR", (c<<b.Lo)&m)
@@ -1213,12 +1213,12 @@ func (g *gen) bitAssign(b *Bit, op string, value lang.Expr, pos lang.Pos) {
 	if op != "=" {
 		value = &lang.Binary{Pos: pos, Op: op[:len(op)-1], L: &lang.BitRef{Pos: pos, Base: r.Name, Lo: b.Lo, Hi: b.Hi}, R: value}
 		if g.lookup(r.Name) != r {
-			g.fail(pos, "složené přiřazení u tohoto bitu není podporováno")
+			g.fail(pos, "compound assignment to this bit is not supported")
 		}
 	}
 	if c, ok := g.c.constEval(value); ok {
 		if c < 0 || c >= 1<<width {
-			g.warn(pos, "hodnota %d se nevejde do %d bitů", c, width)
+			g.warn(pos, "value %d does not fit in %d bits", c, width)
 		}
 		bits := (c << b.Lo) & m
 		g.mem("LDA", src)

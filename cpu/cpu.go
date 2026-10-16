@@ -2,13 +2,13 @@ package cpu
 
 import "fmt"
 
-// Bus je paměť a I/O, které procesor vidí.
+// Bus is the memory and I/O seen by the CPU.
 type Bus interface {
 	Read(addr uint16) byte
 	Write(addr uint16, v byte)
 }
 
-// Příznaky stavového registru.
+// Status register flags.
 const (
 	FlagC byte = 1 << 0
 	FlagZ byte = 1 << 1
@@ -20,19 +20,19 @@ const (
 	FlagN byte = 1 << 7
 )
 
-// CPU je emulátor NMOS 6502 (dokumentované instrukce).
+// CPU is an NMOS 6502 emulator (documented instructions).
 type CPU struct {
 	A, X, Y, S, P byte
 	PC            uint16
 	Cycles        uint64
 	Bus           Bus
-	// IRQLine: když je true a I=0, před další instrukcí proběhne IRQ.
+	// IRQLine: when true and I=0, an IRQ is taken before the next instruction.
 	IRQLine func() bool
-	// IRQVector: adresa obsluhy IRQ/BRK. Výchozí čte vektor $FFFE.
+	// IRQVector: address of the IRQ/BRK handler. The default reads the vector at $FFFE.
 	IRQVector func() uint16
 }
 
-// New vytvoří procesor nad sběrnicí.
+// New creates a CPU on top of a bus.
 func New(b Bus) *CPU {
 	return &CPU{Bus: b, S: 0xFF, P: FlagU | FlagI}
 }
@@ -43,7 +43,7 @@ func (c *CPU) read16(a uint16) uint16 {
 	return uint16(c.read(a)) | uint16(c.read(a+1))<<8
 }
 
-// read16bug emuluje chybu NMOS u JMP ($xxFF).
+// read16bug emulates the NMOS bug of JMP ($xxFF).
 func (c *CPU) read16bug(a uint16) uint16 {
 	b := (a & 0xFF00) | uint16(byte(a)+1)
 	return uint16(c.read(a)) | uint16(c.read(b))<<8
@@ -76,14 +76,14 @@ func (c *CPU) irqVec() uint16 {
 	return c.read16(0xFFFE)
 }
 
-// Reset nastaví PC z vektoru RESET.
+// Reset loads PC from the RESET vector.
 func (c *CPU) Reset() {
 	c.PC = c.read16(0xFFFC)
 	c.S = 0xFD
 	c.P = FlagU | FlagI
 }
 
-// operand spočítá efektivní adresu; vrací adresu a příznak přechodu stránky.
+// operand computes the effective address; returns the address and a page-cross flag.
 func (c *CPU) operand(m Mode) (uint16, bool) {
 	pc := c.PC
 	switch m {
@@ -201,7 +201,7 @@ func (c *CPU) cmp(r, v byte) {
 	c.setZN(d)
 }
 
-// Interrupt provede přerušení (IRQ nebo NMI).
+// Interrupt performs an interrupt (IRQ or NMI).
 func (c *CPU) Interrupt(vector uint16, brk bool) {
 	c.push(byte(c.PC >> 8))
 	c.push(byte(c.PC))
@@ -217,7 +217,7 @@ func (c *CPU) Interrupt(vector uint16, brk bool) {
 	c.Cycles += 7
 }
 
-// Step provede jednu instrukci. Vrací počet cyklů nebo chybu u neplatného opkódu.
+// Step executes one instruction. Returns the cycle count, or an error on an invalid opcode.
 func (c *CPU) Step() (int, error) {
 	if c.IRQLine != nil && !c.flag(FlagI) && c.IRQLine() {
 		c.Interrupt(c.irqVec(), false)
@@ -228,7 +228,7 @@ func (c *CPU) Step() (int, error) {
 	code := c.read(c.PC)
 	op := Table[code]
 	if !op.Valid {
-		return 0, fmt.Errorf("neplatný opkód $%02X na $%04X", code, at)
+		return 0, fmt.Errorf("invalid opcode $%02X at $%04X", code, at)
 	}
 	c.PC++
 	cyc := op.Cycles
@@ -388,7 +388,7 @@ func (c *CPU) Step() (int, error) {
 		hi := c.pull()
 		c.PC = uint16(hi)<<8 | uint16(lo)
 	case "BRK":
-		c.PC++ // BRK přeskočí bajt za sebou
+		c.PC++ // BRK skips the byte after it
 		c.Interrupt(c.irqVec(), true)
 		c.Cycles -= 7
 	default:

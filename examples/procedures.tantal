@@ -1,4 +1,4 @@
-; Procedury: parametry v registrech i ve slotech, návratové hodnoty, overlay
+; Procedures: parameters in registers and in slots, return values, overlay
 byte r1, r2, r3
 card r4, r5
 

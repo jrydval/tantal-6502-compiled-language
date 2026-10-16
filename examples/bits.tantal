@@ -1,26 +1,27 @@
-; Bitové aliasy, bitová pole a stínový registr
+; Bit aliases, bit fields and a shadow register
+; Run with: tantal run examples/bits.tantal --input PAD=C0
 bit  LED     = PBD.0
 bit  READY   = PAD.7
 bit  BUSY    = PAD.6
 bits MODE    = PBD.4..6
 
-byte OUT @ $1702 shadow           ; port B přes stínovou kopii
+byte OUT @ $1702 shadow           ; port B through a shadow copy
 bit  MOTOR = OUT.3
 
 byte n_ready, n_busy, mode_back, led_val, flags
 
-PBDD = $FF                        ; port B výstup
+PBDD = $FF                        ; port B as output
 PBD = 0
 LED = 1
 MODE = 5                          ; PBD = %0101_0001
 mode_back = MODE
-LED ^= 1                          ; přepnutí
+LED ^= 1                          ; toggle
 led_val = LED
 
 MOTOR = 1
 MOTOR = 0
 MOTOR = 1
 
-if READY then n_ready = 1 fi      ; PAD = $C0 ze vstupu
+if READY then n_ready = 1 fi      ; PAD = $C0 from the input
 if BUSY = 1 then n_busy = 1 fi
 if PAD.0 = 0 and not PAD.1 then flags = 3 fi

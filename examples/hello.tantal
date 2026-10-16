@@ -1,4 +1,4 @@
-; Nejjednodušší program: vypíše text na TTY a sečte čísla 1..10
+; The simplest program: prints text to the TTY and sums the numbers 1..10
 byte i
 card sum
 
@@ -13,6 +13,6 @@ proc print(byte pointer s)
   od
 endproc
 
-print("AHOJ")
+print("HELLO")
 CRLF()
 PRTBYT(lo(sum))

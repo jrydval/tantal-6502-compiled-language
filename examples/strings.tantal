@@ -1,4 +1,4 @@
-; Řetězce, ukazatele, mem[] a const tabulky
+; Strings, pointers, mem[] and const tables
 string msg = "TANTAL"
 string[16] line
 const byte[] HEX = '0', '1', '2', '3', '4', '5', '6', '7',

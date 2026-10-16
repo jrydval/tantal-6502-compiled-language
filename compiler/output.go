@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// IntelHex vytvoří záznamy Intel HEX po 16 bajtech.
+// IntelHex produces Intel HEX records of 16 bytes.
 func IntelHex(org int, code []byte) string {
 	var b strings.Builder
 	for i := 0; i < len(code); i += 16 {
@@ -26,9 +26,9 @@ func IntelHex(org int, code []byte) string {
 	return b.String()
 }
 
-// PaperTape vytvoří formát papírové pásky KIM-1 (PAP), který monitor načte příkazem L.
-// Záznam: ;LLAAAA<data>CCCC, kde CCCC je 16bitový součet bajtů počtu, adresy a dat.
-// Poslední záznam: ;00NNNNCCCC, kde NNNN je počet datových záznamů.
+// PaperTape produces the KIM-1 paper tape format (PAP) that the monitor loads with the L command.
+// Record: ;LLAAAA<data>CCCC, where CCCC is the 16-bit sum of the count, address and data bytes.
+// Last record: ;00NNNNCCCC, where NNNN is the number of data records.
 func PaperTape(org int, code []byte) string {
 	var b strings.Builder
 	records := 0

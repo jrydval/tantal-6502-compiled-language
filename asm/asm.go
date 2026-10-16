@@ -1,4 +1,4 @@
-// Package asm je jednoduchý dvouprůchodový assembler 6502 s relaxací skoků.
+// Package asm is a simple two-pass 6502 assembler with branch relaxation.
 package asm
 
 import (
@@ -8,24 +8,24 @@ import (
 	"tantal/cpu"
 )
 
-// Části operandu.
+// Operand parts.
 const (
 	Full = 0
-	Lo   = 1 // <výraz
-	Hi   = 2 // >výraz
+	Lo   = 1 // <expr
+	Hi   = 2 // >expr
 )
 
-// Operand je hodnota: číslo nebo symbol + posun, případně jeho dolní/horní bajt.
+// Operand is a value: a number or symbol + offset, optionally its low/high byte.
 type Operand struct {
 	Sym  string
 	Off  int
 	Part int
 }
 
-// N vytvoří číselný operand.
+// N creates a numeric operand.
 func N(v int) Operand { return Operand{Off: v} }
 
-// S vytvoří symbolický operand.
+// S creates a symbolic operand.
 func S(sym string, off int) Operand { return Operand{Sym: sym, Off: off} }
 
 func (o Operand) String() string {
@@ -53,14 +53,14 @@ func (o Operand) String() string {
 	return s
 }
 
-// Pseudo-režimy: assembler zvolí ZP nebo Abs podle hodnoty operandu.
+// Pseudo modes: the assembler picks ZP or Abs depending on the operand value.
 const (
 	Auto  cpu.Mode = 100
 	AutoX cpu.Mode = 101
 	AutoY cpu.Mode = 102
 )
 
-// Kind je druh položky programu.
+// Kind is the kind of a program item.
 type Kind int
 
 const (
@@ -70,34 +70,34 @@ const (
 	KReserve
 )
 
-// Item je jedna položka programu.
+// Item is one program item.
 type Item struct {
 	Kind Kind
 	Mnem string
 	Mode cpu.Mode
 	Arg  Operand
-	Long bool // relaxovaný skok: Bxx opačný +3 / JMP cíl
+	Long bool // relaxed branch: inverted Bxx +3 / JMP target
 	Name string
 	Data []Operand
 	Size int
-	Line int    // řádek zdrojáku (0 = žádný)
-	File string // soubor zdrojáku
+	Line int    // source line (0 = none)
+	File string // source file
 	Addr int
 }
 
-// Program je posloupnost položek od adresy Org.
+// Program is a sequence of items starting at address Org.
 type Program struct {
 	Org   int
 	Items []*Item
 	Equ   map[string]int
-	// Alias: jméno = jiný symbol + posun (např. rámec procedury)
+	// Alias: name = another symbol + offset (e.g. a procedure frame)
 	Alias map[string]Operand
-	// CurLine/CurFile se přiřadí každé nové položce.
+	// CurLine/CurFile are attached to every new item.
 	CurLine int
 	CurFile string
 }
 
-// New vytvoří prázdný program.
+// New creates an empty program.
 func New(org int) *Program {
 	return &Program{Org: org, Equ: map[string]int{}, Alias: map[string]Operand{}}
 }
@@ -109,26 +109,26 @@ func (p *Program) add(it *Item) *Item {
 	return it
 }
 
-// I přidá instrukci.
+// I adds an instruction.
 func (p *Program) I(mn string, mode cpu.Mode, arg Operand) *Item {
 	return p.add(&Item{Kind: KInstr, Mnem: mn, Mode: mode, Arg: arg})
 }
 
-// Imp přidá instrukci bez operandu.
+// Imp adds an instruction without an operand.
 func (p *Program) Imp(mn string) *Item { return p.I(mn, cpu.Imp, Operand{}) }
 
-// Label definuje návěští.
+// Label defines a label.
 func (p *Program) Label(name string) { p.add(&Item{Kind: KLabel, Name: name}) }
 
-// Bytes přidá data.
+// Bytes adds data.
 func (p *Program) Bytes(data ...Operand) { p.add(&Item{Kind: KBytes, Data: data}) }
 
-// Reserve vyhradí místo (nevkládá bajty do binárky; jen na konec programu).
+// Reserve reserves space (emits no bytes into the binary; only at the end of the program).
 func (p *Program) Reserve(name string, size int) {
 	p.add(&Item{Kind: KReserve, Name: name, Size: size})
 }
 
-// Last vrací poslední instrukci (nebo nil, když poslední položka není instrukce).
+// Last returns the last instruction (or nil if the last item is not an instruction).
 func (p *Program) Last() *Item {
 	if len(p.Items) == 0 {
 		return nil
@@ -140,12 +140,12 @@ func (p *Program) Last() *Item {
 	return it
 }
 
-// Result je výsledek překladu.
+// Result is the assembly result.
 type Result struct {
 	Org    int
 	Code   []byte
-	End    int // první adresa za kódem a daty
-	Top    int // první adresa za vyhrazenými proměnnými
+	End    int // first address after code and data
+	Top    int // first address after reserved variables
 	Labels map[string]int
 	Items  []*Item
 }
@@ -165,7 +165,7 @@ func (p *Program) value(o Operand, labels map[string]int, strict bool) (int, err
 			v += x
 		} else {
 			if strict {
-				return 0, fmt.Errorf("neznámý symbol %q", o.Sym)
+				return 0, fmt.Errorf("unknown symbol %q", o.Sym)
 			}
 			return 0x1000, nil
 		}
@@ -206,9 +206,9 @@ func zpVariant(m cpu.Mode) (cpu.Mode, cpu.Mode) {
 	return m, m
 }
 
-// Assemble přeloží program.
+// Assemble assembles the program.
 func (p *Program) Assemble() (*Result, error) {
-	// Volba ZP/Abs podle hodnot známých z Equ.
+	// Choose ZP/Abs using values known from Equ.
 	for _, it := range p.Items {
 		if it.Kind != KInstr || it.Mode < Auto {
 			continue
@@ -231,13 +231,13 @@ func (p *Program) Assemble() (*Result, error) {
 		case hasZ:
 			it.Mode = zm
 		default:
-			return nil, p.errAt(it, fmt.Errorf("%s nemá požadovaný adresní režim", it.Mnem))
+			return nil, p.errAt(it, fmt.Errorf("%s does not have the required addressing mode", it.Mnem))
 		}
 	}
 	for _, it := range p.Items {
 		if it.Kind == KInstr {
 			if _, ok := cpu.Lookup[it.Mnem][it.Mode]; !ok {
-				return nil, p.errAt(it, fmt.Errorf("%s nepodporuje tento adresní režim", it.Mnem))
+				return nil, p.errAt(it, fmt.Errorf("%s does not support this addressing mode", it.Mnem))
 			}
 		}
 	}
@@ -249,7 +249,7 @@ func (p *Program) Assemble() (*Result, error) {
 			it.Addr = addr
 			if it.Kind == KLabel || it.Kind == KReserve {
 				if _, dup := labels[it.Name]; dup && iter == 0 {
-					return nil, p.errAt(it, fmt.Errorf("návěští %q je definováno dvakrát", it.Name))
+					return nil, p.errAt(it, fmt.Errorf("label %q is defined twice", it.Name))
 				}
 				labels[it.Name] = addr
 			}
@@ -298,7 +298,7 @@ func (p *Program) Assemble() (*Result, error) {
 			switch it.Mode.Size() {
 			case 2:
 				if v < -128 || v > 255 {
-					return nil, p.errAt(it, fmt.Errorf("operand %s=$%X se nevejde do bajtu", it.Arg, v))
+					return nil, p.errAt(it, fmt.Errorf("operand %s=$%X does not fit in a byte", it.Arg, v))
 				}
 				code = append(code, byte(v))
 			case 3:
@@ -325,7 +325,7 @@ func (p *Program) Assemble() (*Result, error) {
 		res.Top = last.Addr + last.size()
 	}
 	if res.End != p.Org+len(code) {
-		return nil, fmt.Errorf("interní chyba: vyhrazené místo musí být až na konci programu")
+		return nil, fmt.Errorf("internal error: reserved space must be at the end of the program")
 	}
 	return res, nil
 }
@@ -337,7 +337,7 @@ func (p *Program) errAt(it *Item, err error) error {
 	return err
 }
 
-// Text vrací instrukci jako text assembleru.
+// Text returns the instruction as assembler text.
 func (it *Item) Text() string {
 	switch it.Mode {
 	case cpu.Imp:
@@ -362,7 +362,7 @@ func (it *Item) Text() string {
 	return it.Mnem
 }
 
-// Cycles vrací základní počet cyklů a popis přirážek.
+// Cycles returns the base cycle count and a description of extra cycles.
 func (it *Item) Cycles() (int, string) {
 	if it.Kind != KInstr {
 		return 0, ""
@@ -370,17 +370,17 @@ func (it *Item) Cycles() (int, string) {
 	op := cpu.Table[cpu.Lookup[it.Mnem][it.Mode]]
 	if cpu.IsBranch(it.Mnem) {
 		if it.Long {
-			return 2, "+3 skok"
+			return 2, "+3 taken"
 		}
-		return 2, "+1 skok"
+		return 2, "+1 taken"
 	}
 	if op.PagePenalty {
-		return op.Cycles, "+1 str."
+		return op.Cycles, "+1 page"
 	}
 	return op.Cycles, ""
 }
 
-// Listing vytvoří výpis s adresami, bajty, instrukcemi a cykly.
+// Listing produces a listing with addresses, bytes, instructions and cycles.
 func Listing(res *Result, sources map[string][]string) string {
 	var b strings.Builder
 	lastKey := ""
@@ -394,7 +394,7 @@ func Listing(res *Result, sources map[string][]string) string {
 	lineSum := 0
 	flushSum := func() {
 		if lineSum > 0 {
-			fmt.Fprintf(&b, "%38s; řádek celkem %d cyklů (bez přirážek)\n", "", lineSum)
+			fmt.Fprintf(&b, "%38s; line total %d cycles (without extras)\n", "", lineSum)
 		}
 		lineSum = 0
 	}
@@ -430,7 +430,7 @@ func Listing(res *Result, sources map[string][]string) string {
 			lineSum += c
 			txt := it.Text()
 			if it.Long {
-				txt += "   ; dlouhý skok"
+				txt += "   ; long branch"
 			}
 			fmt.Fprintf(&b, "%04X  %-9s  %-24s ; %d%s\n", it.Addr, strings.Join(hex, " "), txt, c, suffix(extra))
 		case KBytes:
@@ -457,7 +457,7 @@ func suffix(s string) string {
 	return " " + s
 }
 
-// equValue vyhodnotí symbol jen pomocí Equ a Alias (bez návěští kódu).
+// equValue evaluates a symbol using only Equ and Alias (no code labels).
 func (p *Program) equValue(sym string, depth int) (int, bool) {
 	if depth > 20 {
 		return 0, false

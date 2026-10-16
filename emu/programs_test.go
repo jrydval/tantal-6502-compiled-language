@@ -9,7 +9,7 @@ import (
 	"tantal/compiler"
 )
 
-// run přeloží zdroják a spustí ho v emulátoru.
+// run compiles the source and runs it in the emulator.
 func run(t *testing.T, src string, inputs ...string) *Machine {
 	t.Helper()
 	dir := t.TempDir()
@@ -19,7 +19,7 @@ func run(t *testing.T, src string, inputs ...string) *Machine {
 	}
 	res, err := compiler.CompileFile(path, "pal2")
 	if err != nil {
-		t.Fatalf("překlad: %v", err)
+		t.Fatalf("compile: %v", err)
 	}
 	m := New(res)
 	for _, in := range inputs {
@@ -28,8 +28,8 @@ func run(t *testing.T, src string, inputs ...string) *Machine {
 		}
 	}
 	m.Run(20_000_000)
-	if m.Stop != "návrat do monitoru" {
-		t.Fatalf("běh skončil: %s", m.Stop)
+	if m.Stop != "return to monitor" {
+		t.Fatalf("run stopped: %s", m.Stop)
 	}
 	return m
 }
@@ -39,7 +39,7 @@ func expect(t *testing.T, m *Machine, want map[string]int) {
 	for name, w := range want {
 		_, v, ok := m.Addr(name)
 		if !ok {
-			t.Errorf("proměnná %s neexistuje", name)
+			t.Errorf("variable %s does not exist", name)
 			continue
 		}
 		got := m.Byte(name)
@@ -47,7 +47,7 @@ func expect(t *testing.T, m *Machine, want map[string]int) {
 			got = m.Word(name)
 		}
 		if got != w {
-			t.Errorf("%s = %d ($%X), čekáno %d ($%X)", name, got, got, w, w)
+			t.Errorf("%s = %d ($%X), want %d ($%X)", name, got, got, w, w)
 		}
 	}
 }
@@ -59,10 +59,10 @@ func compileErr(t *testing.T, src, want string) {
 	os.WriteFile(path, []byte(src), 0o644)
 	_, err := compiler.CompileFile(path, "pal2")
 	if err == nil {
-		t.Fatalf("čekána chyba obsahující %q", want)
+		t.Fatalf("expected an error containing %q", want)
 	}
 	if !strings.Contains(err.Error(), want) {
-		t.Fatalf("chyba %q neobsahuje %q", err, want)
+		t.Fatalf("error %q does not contain %q", err, want)
 	}
 }
 
@@ -78,13 +78,13 @@ func example(t *testing.T, name string, inputs ...string) *Machine {
 func TestExampleHello(t *testing.T) {
 	m := example(t, "hello.tantal")
 	expect(t, m, map[string]int{"i": 10, "sum": 55})
-	if got := m.TTY(); got != "AHOJ\n37" {
+	if got := m.TTY(); got != "HELLO\n37" {
 		t.Errorf("TTY = %q", got)
 	}
 }
 
 func TestExampleArithmetic(t *testing.T) {
-	m := example(t, "aritmetika.tantal")
+	m := example(t, "arithmetic.tantal")
 	expect(t, m, map[string]int{
 		"r_add": 207, "r_sub": 63, "r_mul": 63, "r_div": 28, "r_mod": 4, "r_shl": 56, "r_shr": 50, "r_neg": 249,
 		"w_mul": 1400, "w_div": 33, "w_mod": 10, "w_add": 1200, "w_sub": 65535, "w_shl": 16000, "y": 8003, "d0": 255,
@@ -93,7 +93,7 @@ func TestExampleArithmetic(t *testing.T) {
 }
 
 func TestExampleBits(t *testing.T) {
-	m := example(t, "bity.tantal", "PAD=C0")
+	m := example(t, "bits.tantal", "PAD=C0")
 	expect(t, m, map[string]int{"n_ready": 1, "n_busy": 1, "mode_back": 5, "led_val": 0, "flags": 3})
 	if m.Mem[0x1702] != 0x08 {
 		t.Errorf("PBD = $%02X", m.Mem[0x1702])
@@ -101,12 +101,12 @@ func TestExampleBits(t *testing.T) {
 }
 
 func TestExampleProcedures(t *testing.T) {
-	m := example(t, "procedury.tantal")
+	m := example(t, "procedures.tantal")
 	expect(t, m, map[string]int{"r1": 6, "r2": 33, "r3": 9, "r4": 1006, "r5": 2500})
 }
 
 func TestExampleStrings(t *testing.T) {
-	m := example(t, "retezce.tantal")
+	m := example(t, "strings.tantal")
 	expect(t, m, map[string]int{"n": 6, "total": 45, "peek": 0x56})
 	if got := m.TTY(); got != "TANTAL MANTAL\nA5" {
 		t.Errorf("TTY = %q", got)
@@ -114,19 +114,19 @@ func TestExampleStrings(t *testing.T) {
 }
 
 func TestExampleAnalyzer(t *testing.T) {
-	m := example(t, "analyzator.tantal", "PAD=@0:00,@500:01,@800:03,@1500:00,@1600:80")
+	m := example(t, "analyzer.tantal", "PAD=@0:00,@500:01,@800:03,@1500:00,@1600:80")
 	expect(t, m, map[string]int{"changes": 4, "timedout": 1})
 	if got := m.TTY(); got != "01 03 00 80 \n" {
 		t.Errorf("TTY = %q", got)
 	}
-	// limit 2 s od poslední změny (cyklus 1600)
+	// timeout 2 s after the last change (cycle 1600)
 	if c := m.CPU.Cycles; c < 2_000_000 || c > 2_020_000 {
-		t.Errorf("konec po %d cyklech, čekáno zhruba 2 001 600", c)
+		t.Errorf("stopped after %d cycles, want about 2,001,600", c)
 	}
 }
 
 func TestExampleInterrupt(t *testing.T) {
-	m := example(t, "preruseni.tantal", "PAD=@0:00,@3000:05")
+	m := example(t, "interrupts.tantal", "PAD=@0:00,@3000:05")
 	expect(t, m, map[string]int{"ticks": 10, "n": 10, "got": 0})
 }
 
@@ -134,11 +134,11 @@ func TestForLoops(t *testing.T) {
 	m := run(t, `
 byte i, n1, n2, n3, n4, n5, n6
 card j, n7
-for i = 0 to 255 do n1 += 1 od          ; 256 průchodů: n1 přeteče na 0
+for i = 0 to 255 do n1 += 1 od          ; 256 passes: n1 wraps to 0
 for i = 250 to 255 do n2 += 1 od        ; 6
 for i = 5 to 4 do n3 += 1 od            ; 0
 for i = 0 until 0 do n4 += 1 od         ; 0
-for i = 0 until 256 do n5 += 1 od       ; 256 → 0
+for i = 0 until 256 do n5 += 1 od       ; 256 -> 0
 for i = 0 to 100 step 10 do n6 += 1 od  ; 11
 for j = 0 to 999 do n7 += 1 od          ; 1000
 `)
@@ -177,7 +177,7 @@ r <- 2
 r <- 3
 f1 = full(r)
 r <- 4
-r <- 5           ; přepíše 1
+r <- 5           ; overwrites 1
 f2 = full(r)
 a = r[0]         ; 2
 b = last(r, 0)   ; 5
@@ -338,7 +338,7 @@ bit LAMP = OUT.1
 LAMP = 1
 `)
 	if m.Mem[0x1702] != 0x83 {
-		t.Errorf("OUT = $%02X, čekáno $83", m.Mem[0x1702])
+		t.Errorf("OUT = $%02X, want $83", m.Mem[0x1702])
 	}
 }
 
@@ -357,18 +357,18 @@ q2 = big / 1
 }
 
 func TestErrors(t *testing.T) {
-	compileErr(t, "proc a()\n b()\nendproc\nproc b()\n a()\nendproc\na()\n", "rekurze")
-	compileErr(t, "TIMSTAT = 1\n", "jen pro čtení")
-	compileErr(t, "byte x\nx = TIM1\n", "jen pro zápis")
-	compileErr(t, "byte x\nx = y\n", "neznámé jméno")
+	compileErr(t, "proc a()\n b()\nendproc\nproc b()\n a()\nendproc\na()\n", "recursion")
+	compileErr(t, "TIMSTAT = 1\n", "read-only")
+	compileErr(t, "byte x\nx = TIM1\n", "write-only")
+	compileErr(t, "byte x\nx = y\n", "unknown name")
 	compileErr(t, "proc f()\nendproc\ninterrupt irq proc h()\n f()\nendproc\nf()\n", "irqsafe")
-	compileErr(t, "byte[4] a\na[4] = 1\n", "mimo pole")
-	compileErr(t, "ring byte[100] r\n", "mocnina 2")
-	compileErr(t, ".end $2005\nbyte x\nx = 1\nx = 2\nx = 3\n", "přesahuje")
-	compileErr(t, "exit\n", "mimo smyčku")
+	compileErr(t, "byte[4] a\na[4] = 1\n", "outside array")
+	compileErr(t, "ring byte[100] r\n", "power of 2")
+	compileErr(t, ".end $2005\nbyte x\nx = 1\nx = 2\nx = 3\n", "exceeds")
+	compileErr(t, "exit\n", "outside a loop")
 	compileErr(t, "do\n atomic\n  exit\n endatomic\nod\n", "atomic")
-	compileErr(t, "const byte[] T = 1, 2\nT[0] = 3\n", "jen pro čtení")
-	compileErr(t, "byte x\nif x then\n", "konec souboru")
+	compileErr(t, "const byte[] T = 1, 2\nT[0] = 3\n", "read-only")
+	compileErr(t, "byte x\nif x then\n", "end of file")
 }
 
 func TestZPExclude(t *testing.T) {
@@ -379,7 +379,7 @@ b = a
 `)
 	a, v, _ := m.Addr("a")
 	if v.InZP || a < 0x2000 {
-		t.Errorf("a leží na $%04X, čekáno za kódem", a)
+		t.Errorf("a is at $%04X, want after the code", a)
 	}
 }
 
@@ -414,7 +414,7 @@ endproc
 x = pop(r)
 `)
 	if !hasWarn(ws, "atomic") {
-		t.Errorf("čekáno varování o atomic, dostali jsme %v", ws)
+		t.Errorf("expected a warning about atomic, got %v", ws)
 	}
 	ws = compileWarn(t, `
 ring byte[8] r
@@ -427,11 +427,11 @@ atomic
 endatomic
 `)
 	if hasWarn(ws, "atomic") {
-		t.Errorf("nečekané varování: %v", ws)
+		t.Errorf("unexpected warning: %v", ws)
 	}
 	ws = compileWarn(t, "byte a\nif a <-1 then a = 2 fi\n")
-	if !hasWarn(ws, "mezeru") {
-		t.Errorf("čekáno varování o <-: %v", ws)
+	if !hasWarn(ws, "add a space") {
+		t.Errorf("expected a warning about <-: %v", ws)
 	}
 }
 
@@ -445,7 +445,7 @@ runs += other
 	m.CPU.PC = uint16(m.Res.Org)
 	m.Stop = ""
 	m.Run(m.CPU.Cycles + 100000)
-	// other se při druhém spuštění vynuluje, runs ne
+	// other is cleared on the second run, runs is not
 	expect(t, m, map[string]int{"runs": 7, "other": 1})
 }
 
@@ -479,7 +479,7 @@ s -= 5
 
 func TestFramesInRAM(t *testing.T) {
 	m := run(t, `
-.zp exclude $00-$EC        ; zbydou 2 bajty: __mp
+.zp exclude $00-$EC        ; 2 bytes remain: __mp
 byte[4] data = 1, 2, 3, 4
 byte r
 card w
@@ -497,7 +497,7 @@ w = wide(1000, 2000, 5)
 	expect(t, m, map[string]int{"r": 10, "w": 3005})
 	_, v, _ := m.Addr("r")
 	if v.InZP {
-		t.Error("r nemá být v zero page")
+		t.Error("r must not be in the zero page")
 	}
 }
 

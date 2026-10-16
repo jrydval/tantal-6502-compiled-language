@@ -1,21 +1,47 @@
-# Tantal 0.1
+# Tantal
 
-Kompilátor jazyka Tantal pro 6502, první verze. Napsaný v Go, bez závislostí, jeden binár pro macOS, Linux i Windows. Obsahuje vlastní assembler a emulátor 6502 s modelem počítače PAL-2.
+Tantal is a small compiled language for the MOS 6502, in the spirit of Action! for the Atari. It is built for writing short programs quickly, with constructs that map closely to 6502 instructions and direct access to memory-mapped I/O.
 
-Specifikace jazyka je v dokumentu *Tantal – jazyk pro 6502: specifikace v0.1*. Tento soubor popisuje, co z ní verze 0.1 umí, co ne a jaká rozhodnutí padla při implementaci.
+This repository holds the first version (0.1) of the compiler. It is written in Go with no dependencies and builds into a single binary for macOS, Linux and Windows. It has its own assembler and a 6502 emulator with a model of the PAL-2 computer (a modernized KIM-1), so programs can be tried on a PC before they go to the hardware.
 
-## Sestavení
+## The language at a glance
+
+```
+; Count changes on port A, give up after 2 s without a change
+ring byte[256] log           ; ring buffer of the last 256 samples
+byte PAD_OLD, cur
+card changes
+bit  LED = PBD.0             ; a named bit of an I/O register
+
+PBDD = $FF                   ; port B as output
+PAD_OLD = PAD
+do
+  cur = wait change PAD from PAD_OLD timeout 2 s
+  if timedout then exit fi
+  log <- cur
+  changes += 1
+  LED ^= 1
+od
+```
+
+Design points:
+
+- **No stack for parameters or locals.** The hardware stack only holds return addresses. Parameters and locals live at fixed addresses, and procedures that can never be active at the same time share memory (an overlay computed from the call graph). The first three parameter bytes are passed in A, X and Y. Recursion is a compile error.
+- **No boilerplate.** Top-level code is the program; there is no `main` and no module header.
+- **I/O as variables.** Registers get names with `@`, single bits and bit fields get names with `bit` and `bits`, and qualifiers `readonly`, `writeonly` and `shadow` keep read-modify-write on hardware registers safe.
+- **Predictable code.** Each construct has a known translation. The listing shows the generated instructions and the cycle count for every source line.
+- **Machine described by a file.** Memory map, I/O registers and monitor routines come from a target file; `pal2` is built in.
+
+## Building
 
 ```
 go build -o tantal ./cmd/tantal
 go test ./...
 ```
 
-Křížový překlad, např. pro Windows: `GOOS=windows GOARCH=amd64 go build -o tantal.exe ./cmd/tantal`.
+Cross-compiling, e.g. for Windows: `GOOS=windows GOARCH=amd64 go build -o tantal.exe ./cmd/tantal`.
 
-Přiložené binárky pro macOS nejsou podepsané. Pokud je macOS odmítne spustit, sestavte kompilátor ze zdrojáků příkazem výše, nebo odstraňte karanténu: `xattr -d com.apple.quarantine tantal-darwin-arm64`.
-
-## Použití
+## Usage
 
 ```
 tantal build program.tantal
@@ -23,113 +49,113 @@ tantal run program.tantal --input PAD=00,01,03 --max 5000000
 tantal run program.tantal --input PAD=@0:00,@500:01,@800:00
 ```
 
-`build` vytvoří vedle zdrojáku:
+`build` writes next to the source:
 
-| Soubor | Obsah |
+| File | Contents |
 | --- | --- |
-| `.bin` | binární obraz od adresy `.org` |
+| `.bin` | binary image starting at `.org` |
 | `.hex` | Intel HEX |
-| `.pap` | papírová páska KIM-1 pro nahrání příkazem `L` v monitoru |
-| `.lst` | listing: řádek zdrojáku, instrukce, bajty, cykly, součet cyklů za řádek |
-| `.map` | mapa paměti: proměnné, rámce procedur (overlay), obsazení zero page |
-| `.sym` | tabulka symbolů |
+| `.pap` | KIM-1 paper tape format, loaded with the monitor's `L` command |
+| `.lst` | listing: source line, instructions, bytes, cycles, cycle total per line |
+| `.map` | memory map: variables, procedure frames (overlay), zero page usage |
+| `.sym` | symbol table |
 
-`run` přeloží program a spustí ho v emulátoru. Vypíše hodnoty proměnných, zápisy na I/O, volání rutin monitoru a text poslaný na TTY.
+`run` compiles the program and runs it in the emulator. It prints the variables, I/O writes, calls of monitor routines and the text sent to the TTY.
 
-- `--input JMÉNO=h1,h2,…` – hodnoty (hexa) pro postupná čtení registru (`PAD`) nebo návratové hodnoty rutiny monitoru (`GETKEY`). Po vyčerpání se opakuje poslední hodnota.
-- `--input JMÉNO=@cyklus:hodnota,…` – hodnota se mění v daném cyklu nezávisle na počtu čtení.
-- `--max N` – limit cyklů (výchozí 1 000 000, tedy 1 s při 1 MHz).
-- `--trace` – stopa provedených instrukcí do souboru `.trace`.
+- `--input NAME=h1,h2,...` gives hex values for successive reads of a register (`PAD`) or return values of a monitor routine (`GETKEY`). After the last value, the last one repeats.
+- `--input NAME=@cycle:value,...` changes the value at the given cycle, regardless of how often it is read.
+- `--max N` sets the cycle limit (default 1,000,000, i.e. 1 s at 1 MHz).
+- `--trace` writes the executed instructions to a `.trace` file.
 
-Porty, pro které nezadáte `--input`, vracejí obsah paměti, tedy obvykle `$00`. Výstup `run` na takové čtení upozorní.
+Ports without an `--input` return memory contents, usually `$00`; the `run` output points such reads out.
 
-Emulátor neobsahuje ROM monitoru. Každé `JSR` do `$1800–$1FFF` jen zaznamená i s registry a hned se vrátí, skok na `$1C4F` (START) ukončí běh. Časovač uživatelského RIOT (`$1704–$170F`) je emulovaný včetně přerušení; IRQ jde přes vektor `$17FE` jako u KIM-1.
+The emulator contains no monitor ROM. Every `JSR` into `$1800-$1FFF` is logged with the registers and returns immediately, and a jump to `$1C4F` (START) ends the run. The user RIOT timer (`$1704-$170F`) is emulated including its interrupt; IRQs go through the vector at `$17FE` as on the KIM-1.
 
-## Příklady
+## Examples
 
-Ve složce `examples`:
+In the `examples` folder:
 
-| Soubor | Co ukazuje |
+| File | Shows |
 | --- | --- |
-| `hello.tantal` | smyčka for, procedura s ukazatelem, výstup na TTY |
-| `aritmetika.tantal` | byte i card, násobení, dělení, posuny, porovnání |
-| `bity.tantal` | bitové aliasy, bitová pole, stínový registr |
-| `procedury.tantal` | parametry v registrech i slotech, návratové hodnoty, overlay |
-| `retezce.tantal` | řetězce, ukazatele, `mem[]`, const tabulky |
-| `analyzator.tantal` | logický analyzátor: `wait change … from … timeout`, ring, displej |
-| `preruseni.tantal` | obsluha IRQ od časovače, ring sdílený s přerušením, `atomic` |
+| `hello.tantal` | for loop, procedure with a pointer, TTY output |
+| `arithmetic.tantal` | byte and card, multiplication, division, shifts, comparisons |
+| `bits.tantal` | bit aliases, bit fields, a shadow register |
+| `procedures.tantal` | parameters in registers and slots, return values, overlay |
+| `strings.tantal` | strings, pointers, `mem[]`, const tables |
+| `analyzer.tantal` | logic analyzer: `wait change ... from ... timeout`, ring, display |
+| `interrupts.tantal` | timer IRQ handler, ring shared with an interrupt, `atomic` |
 
-Příklady, které čtou port, potřebují v emulátoru zadaný vstup:
+Examples that read a port need input in the emulator:
 
 ```
-tantal run examples/analyzator.tantal --max 5000000 \
+tantal run examples/analyzer.tantal --max 5000000 \
   --input PAD=@0:00,@500:01,@800:03,@1500:00,@1600:80
-tantal run examples/preruseni.tantal --input PAD=@0:00,@3000:05,@6000:07
-tantal run examples/bity.tantal --input PAD=C0
+tantal run examples/interrupts.tantal --input PAD=@0:00,@3000:05,@6000:07
+tantal run examples/bits.tantal --input PAD=C0
 ```
 
-## Co verze 0.1 umí
+## What version 0.1 supports
 
-- Typy `byte`, `card`, `byte pointer`, pole `byte[n]`, `string`, `ring byte[n]`, konstanty `const`.
-- Proměnné na pevné adrese `@`, kvalifikátory `readonly`, `writeonly`, `shadow`, `noinit`.
-- Bitové aliasy `bit`, bitová pole `bits`, přímý zápis `PAD.7`, test bitů 7 a 6 instrukcí `BIT`.
-- Direktivy `.org`, `.end`, `.zp exclude`, `.include`, `.target`, `.cpu 6502`.
-- `if/elif/else`, `do … od`, `do … until … od`, `while`, `for … to/until … step`, `exit`.
-- Procedury: první tři bajty parametrů v A/X/Y, další ve slotech rámce, návrat v A nebo A/X. Overlay rámců podle grafu volání, kontrola rekurze, `irqsafe` (kopie procedury pro každý kontext).
-- `interrupt irq/nmi proc` včetně předání instrukce BRK monitoru na `$1C00`, `atomic`, inline `asm … endasm` s přístupem k proměnným Tantalu.
-- `extern proc` pro rutiny monitoru; `pal2.tantal` s registry obou RIOT a rutinami monitoru se načte automaticky.
-- `wait <podmínka>`, `wait change X [from Y]`, `wait rising/falling X.n`, vše i s `timeout N us|ms|s` a proměnnou `timedout`.
-- Kruhový buffer: `buf <- x`, `pop`, `buf[i]`, `last`, `len`, `full`, `clear`.
-- Násobení, dělení a `mod` (mocniny 2 jako posuny, jinak 16bitová běhová rutina), dělení nulou podle specifikace.
-- Inicializace globálních proměnných při každém spuštění; nepoužité proměnné a procedury se do programu nedostanou.
-- Varování, když data mění hlavní program i obsluha přerušení mimo `atomic`.
+- Types `byte`, `card` (16-bit unsigned), `byte pointer`, arrays `byte[n]`, `string` (length in the first byte), `ring byte[n]`, constants `const`.
+- Variables at a fixed address with `@`; qualifiers `readonly`, `writeonly`, `shadow`, `noinit`.
+- Bit aliases `bit`, bit fields `bits`, direct bit access `PAD.7`; bits 7 and 6 are tested with the `BIT` instruction.
+- Directives `.org`, `.end`, `.zp exclude`, `.include`, `.target`, `.cpu 6502`.
+- `if/elif/else`, `do ... od`, `do ... until ... od`, `while`, `for ... to/until ... step`, `exit`.
+- Procedures: first three parameter bytes in A/X/Y, the rest in frame slots, return value in A or A/X. Frame overlay from the call graph, recursion check, `irqsafe` (a copy of the procedure for each context).
+- `interrupt irq/nmi proc`, including passing a BRK instruction on to the monitor at `$1C00`; `atomic`; inline `asm ... endasm` with access to Tantal variables.
+- `extern proc` for monitor routines; `pal2.tantal` with both RIOTs and the monitor routines is loaded automatically.
+- `wait <condition>`, `wait change X [from Y]`, `wait rising/falling X.n`, each with an optional `timeout N us|ms|s` and the `timedout` variable.
+- Ring buffer: `buf <- x`, `pop`, `buf[i]`, `last`, `len`, `full`, `clear`.
+- Multiplication, division and `mod` (powers of 2 as shifts and masks, otherwise a 16-bit runtime routine); division by zero gives all ones.
+- Global variables are initialized on every start; unused variables and procedures are left out of the program.
+- A warning when data is modified by both the main program and an interrupt handler outside `atomic`.
 
-## Co zatím chybí
+## Not yet implemented
 
-| Funkce | Stav |
+| Feature | Status |
 | --- | --- |
-| Kontrola `.cycles` | direktiva se přečte, ale nekontroluje; cykly po řádcích jsou v listingu |
-| Testovací bloky `test … endtest` (fáze 2) a časované vstupy v testech | zatím jen `tantal run` s `--input` |
-| `tantal upload`, `tantal watch` | `.pap` se zatím posílá ručně terminálem (2400 bps 8N2, příkaz `L`) |
-| Typy `int`, `sbyte` a porovnání se znaménkem | nepodporováno |
-| Pole `card[n]`, `card pointer` | nepodporováno |
-| Návratová hodnota `card` z `extern proc` | nepodporováno |
-| Přednost proměnných v zero page podle počtu přístupů | proměnné se do zero page dávají v pořadí deklarace |
-| Balení příznaků `bit READY` po osmi do bajtu | každý příznak má vlastní bajt |
-| `.vars` | nepodporováno; proměnné jdou do zero page a za kód |
-| Instrukce 65C02 | nepodporováno (`.cpu 6502`) |
+| `.cycles` check | the directive is parsed but not checked; the listing shows cycles per line |
+| `test ... endtest` blocks and timed inputs in tests | only `tantal run` with `--input` so far |
+| `tantal upload`, `tantal watch` | send the `.pap` file by hand through a terminal (2400 bps 8N2, `L` command) |
+| `int`, `sbyte` and signed comparisons | not supported |
+| `card[n]` arrays, `card pointer` | not supported |
+| `card` return value from `extern proc` | not supported |
+| Zero page priority by access count | variables go to the zero page in declaration order |
+| Packing `bit READY` flags eight to a byte | each flag takes its own byte |
+| `.vars` | not supported; variables go to the zero page and after the code |
+| 65C02 instructions | not supported (`.cpu 6502`) |
 
-## Rozhodnutí, která specifikace neřešila
+## Implementation choices
 
-Udělal jsem je sám, aby šlo pokračovat; všechna lze změnit.
+These were made where the language design left the question open; all of them can change.
 
-- **Mez smyčky for** se spočítá jednou na začátku smyčky.
-- **Ukazatel jako parametr** leží v rámci procedury; před přístupem `p[i]` se zkopíruje do pomocného ukazatele `__mp` v zero page. Ukazatele deklarované jako proměnné leží vždy v zero page.
-- **Pomocné proměnné** `__mp` (ukazatel pro `mem[]` a velká pole) a `__rt` (násobení, dělení) jsou společné. Když je používá hlavní program i obsluha přerušení, kompilátor vypíše varování.
-- **Obsluha IRQ** zapne přerušení instrukcí `CLI` na konci startovacího kódu.
-- **Shadow registr s počáteční hodnotou** (`byte OUT @ $1702 shadow = $81`) se při startu zapíše do kopie i do registru; bez počáteční hodnoty začíná kopie na 0 a registr se nezapisuje.
-- **Proměnná `noinit` s počáteční hodnotou** leží v binárce za kódem (ne v zero page), aby hodnotu nastavilo nahrání programu.
-- **Literál `"…"z`** je typu `byte pointer`; běžný literál ve výrazu dává adresu řetězce s délkou.
-- **Vstupy emulátoru** se zadávají v šestnáctkové soustavě.
+- **The bound of a for loop** is evaluated once, at the start of the loop.
+- **A pointer parameter** lives in the procedure frame and is copied to the zero page helper pointer `__mp` before `p[i]`. Pointers declared as variables always live in the zero page.
+- **Helper variables** `__mp` (pointer for `mem[]` and large arrays) and `__rt` (multiplication, division) are shared. When both the main program and an interrupt handler use them, the compiler warns.
+- **An IRQ handler** enables interrupts with `CLI` at the end of the startup code.
+- **A shadow register with an initial value** (`byte OUT @ $1702 shadow = $81`) is written to both the copy and the register at startup; without an initial value the copy starts at 0 and the register is not written.
+- **A `noinit` variable with an initial value** is stored in the binary after the code (not in the zero page), so that loading the program sets the value.
+- **A `"..."z` literal** has type `byte pointer`; a plain literal in an expression gives the address of a length-prefixed string.
+- **Emulator inputs** are given in hexadecimal.
 
-## K ověření na skutečném PAL-2
+## To verify on real PAL-2 hardware
 
-- **Formát PAP.** Záznam `;LLAAAA<data>CCCC`, kontrolní součet je 16bitový součet bajtů počtu, adresy a dat; poslední záznam `;00NNNNCCCC` s počtem záznamů. Takto je formát KIM-1 popsaný, ale proti monitoru PAL-2 jsem ho nezkoušel.
-- **Časování `timeout`** počítá s taktem 1 MHz a s tím, že časovač na `$1704–$1707` počítá takty jako 6530 v KIM-1. V emulátoru limit sedí s přesností na jeden tik.
-- **Rozsah `$1750–$177F`** je v targetu rezervovaný, dokud se neověří.
+- **PAP format.** Record `;LLAAAA<data>CCCC`, where the checksum is the 16-bit sum of the count, address and data bytes; the last record is `;00NNNNCCCC` with the number of records. This follows the KIM-1 description but has not been tried against the PAL-2 monitor.
+- **`timeout` timing** assumes a 1 MHz clock and a timer at `$1704-$1707` that counts clock cycles like the 6530 in the KIM-1. In the emulator the timeout is accurate to one timer tick.
+- **The range `$1750-$177F`** is reserved in the target until it is verified.
 
-## Ověření
+## Testing
 
-- Emulátor procesoru prošel funkčním testem Klause Dormanna (`6502_functional_test.bin`, včetně dekadického režimu). Test se spustí, když je nastavená proměnná `DORMANN` s cestou k obrazu: `DORMANN=…/6502_functional_test.bin go test ./cpu`.
-- `go test ./emu` přeloží všechny příklady a další programy (smyčky na hranici 255/256, ring, wait s hranami a limitem, přerušení, irqsafe, asm, velká pole, chyby překladu, varování) a ověří výsledky v emulátoru.
+- The CPU emulator passes Klaus Dormann's 6502 functional test (`6502_functional_test.bin`, including decimal mode). The test runs when the `DORMANN` variable points to the image: `DORMANN=.../6502_functional_test.bin go test ./cpu`.
+- `go test ./emu` compiles all examples and further programs (loops at the 255/256 boundary, ring, wait with edges and timeouts, interrupts, irqsafe, asm, large arrays, compile errors, warnings) and checks the results in the emulator.
 
-## Struktura
+## Layout
 
-| Balíček | Obsah |
+| Package | Contents |
 | --- | --- |
-| `cpu` | tabulka instrukcí NMOS 6502 a emulátor procesoru |
-| `asm` | assembler s relaxací skoků, inline assembler, listing |
+| `cpu` | NMOS 6502 instruction table and CPU emulator |
+| `asm` | assembler with branch relaxation, inline assembler, listing |
 | `lang` | lexer, AST, parser |
-| `compiler` | sémantika, generátor kódu, alokace paměti, výstupní formáty, targety |
-| `emu` | model PAL-2 pro `tantal run`, testy programů |
-| `cmd/tantal` | příkazová řádka |
+| `compiler` | semantics, code generation, memory allocation, output formats, targets |
+| `emu` | PAL-2 model for `tantal run`, program tests |
+| `cmd/tantal` | command line |

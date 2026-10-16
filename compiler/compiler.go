@@ -1,4 +1,4 @@
-// Package compiler překládá Tantal do strojového kódu 6502.
+// Package compiler translates Tantal into 6502 machine code.
 package compiler
 
 import (
@@ -12,12 +12,12 @@ import (
 	"tantal/lang"
 )
 
-// Version je verze kompilátoru.
+// Version is the compiler version.
 const Version = "0.1.0"
 
 type constVal struct{ V int }
 
-// Compiler drží stav jednoho překladu.
+// Compiler holds the state of one compilation.
 type Compiler struct {
 	T         *Target
 	Sources   map[string][]string
@@ -54,10 +54,10 @@ func (c *Compiler) fail(pos lang.Pos, f string, a ...any) {
 }
 
 func (c *Compiler) warn(pos lang.Pos, f string, a ...any) {
-	c.Warnings = append(c.Warnings, fmt.Sprintf("%s: varování: %s", pos, fmt.Sprintf(f, a...)))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("%s: warning: %s", pos, fmt.Sprintf(f, a...)))
 }
 
-// Result je výsledek překladu.
+// Result is the compilation result.
 type Result struct {
 	Target   *Target
 	Asm      *asm.Result
@@ -76,7 +76,7 @@ type Result struct {
 	VarTop   int
 }
 
-// CompileFile přeloží soubor.
+// CompileFile compiles a file.
 func CompileFile(path, target string) (*Result, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -85,7 +85,7 @@ func CompileFile(path, target string) (*Result, error) {
 	return Compile(path, string(src), target)
 }
 
-// Compile přeloží zdroják.
+// Compile compiles source code.
 func Compile(path, src, target string) (res *Result, err error) {
 	t, err := LoadTarget(target)
 	if err != nil {
@@ -134,7 +134,7 @@ func (c *Compiler) parseFile(path, src string, fromTarget bool) {
 			c.directive(d, path)
 		default:
 			if fromTarget {
-				c.fail(s.P(), "soubor targetu smí obsahovat jen deklarace")
+				c.fail(s.P(), "a target file may contain only declarations")
 			}
 			c.mainBody = append(c.mainBody, s)
 		}
@@ -150,7 +150,7 @@ func (c *Compiler) directive(d *lang.Directive, path string) {
 	case "zp":
 		lo, hi := c.mustConst(d.Args[0]), c.mustConst(d.Args[1])
 		if lo < 0 || hi > 255 || hi < lo {
-			c.fail(d.Pos, "rozsah .zp exclude musí ležet v $00–$FF")
+			c.fail(d.Pos, "the .zp exclude range must lie within $00-$FF")
 		}
 		c.zpExclude = append(c.zpExclude, Range{lo, hi})
 	case "include":
@@ -161,19 +161,19 @@ func (c *Compiler) directive(d *lang.Directive, path string) {
 		c.included[file] = true
 		src, err := os.ReadFile(file)
 		if err != nil {
-			c.fail(d.Pos, "nelze načíst %s", d.Text)
+			c.fail(d.Pos, "cannot read %s", d.Text)
 		}
 		c.parseFile(file, string(src), false)
 	case "target":
 		if d.Text != c.T.Name {
-			c.fail(d.Pos, "program je pro target %q, překládá se pro %q", d.Text, c.T.Name)
+			c.fail(d.Pos, "the program is for target %q, compiling for %q", d.Text, c.T.Name)
 		}
 	case "cpu":
 		if d.Text != "6502" {
-			c.fail(d.Pos, "v0.1 podporuje jen .cpu 6502")
+			c.fail(d.Pos, "v0.1 supports only .cpu 6502")
 		}
 	case "vars":
-		c.fail(d.Pos, ".vars zatím není podporováno; proměnné jsou v zero page a za kódem")
+		c.fail(d.Pos, ".vars is not supported yet; variables go to the zero page and after the code")
 	case "cycles":
 		c.mainBody = append(c.mainBody, d)
 	}
@@ -181,10 +181,10 @@ func (c *Compiler) directive(d *lang.Directive, path string) {
 
 func (c *Compiler) define(name string, pos lang.Pos, v any) {
 	if _, dup := c.globals[name]; dup {
-		c.fail(pos, "jméno %q je už definováno", name)
+		c.fail(pos, "name %q is already defined", name)
 	}
 	if builtinNames[name] {
-		c.fail(pos, "jméno %q je vyhrazené", name)
+		c.fail(pos, "name %q is reserved", name)
 	}
 	c.globals[name] = v
 }
@@ -200,15 +200,15 @@ func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 		v.Elem = TCard
 	}
 	if v.Pointer && v.Elem == TCard {
-		c.fail(d.Pos, "v0.1 podporuje jen byte pointer")
+		c.fail(d.Pos, "v0.1 supports only byte pointer")
 	}
 	if v.Array && v.Elem == TCard {
-		c.fail(d.Pos, "v0.1 podporuje jen pole typu byte")
+		c.fail(d.Pos, "v0.1 supports only byte arrays")
 	}
 	if d.Type.LenExpr != nil {
 		v.Len = c.mustConst(d.Type.LenExpr)
 		if v.Len <= 0 {
-			c.fail(d.Pos, "velikost pole musí být kladná")
+			c.fail(d.Pos, "array size must be positive")
 		}
 		if v.String {
 			v.Len++
@@ -218,39 +218,39 @@ func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 		v.Fixed = true
 		v.Addr = c.mustConst(d.Addr)
 		if v.Addr < 0 || v.Addr > 0xFFFF {
-			c.fail(d.Pos, "adresa mimo rozsah")
+			c.fail(d.Pos, "address out of range")
 		}
 		if proc != nil {
-			c.fail(d.Pos, "proměnná na pevné adrese musí být globální")
+			c.fail(d.Pos, "a variable at a fixed address must be global")
 		}
 		if v.Addr < 256 {
 			for _, r := range c.zpExclude {
 				if v.Addr >= r.Lo && v.Addr <= r.Hi {
-					c.warn(d.Pos, "%s leží ve vyloučené části zero page", v.Name)
+					c.warn(d.Pos, "%s lies in an excluded part of the zero page", v.Name)
 				}
 			}
 		}
 		for _, r := range c.T.Reserve {
 			if v.Addr >= r.Lo && v.Addr <= r.Hi && (r.Lo >= 0x1700 && r.Hi < 0x1800) {
-				c.warn(d.Pos, "%s leží v rezervovaném rozsahu $%04X–$%04X", v.Name, r.Lo, r.Hi)
+				c.warn(d.Pos, "%s lies in the reserved range $%04X-$%04X", v.Name, r.Lo, r.Hi)
 			}
 		}
 	}
 	if d.Shadow {
 		if !v.Fixed || !v.Scalar() || v.Elem != TByte {
-			c.fail(d.Pos, "shadow lze použít jen u byte registru s adresou @")
+			c.fail(d.Pos, "shadow can only be used on a byte register with an @ address")
 		}
 		v.Shadow = &Var{Name: v.Name + "'shadow", Elem: TByte, Hidden: true, Pos: d.Pos}
 	}
 	if v.Const && !v.Array {
-		c.fail(d.Pos, "const se u proměnné používá pro tabulky; pro konstantu napište const JMÉNO = hodnota")
+		c.fail(d.Pos, "const on a variable is for tables; for a constant write const NAME = value")
 	}
-	// počáteční hodnoty
+	// initial values
 	switch {
 	case d.File != "":
 		data, err := os.ReadFile(filepath.Join(filepath.Dir(d.Pos.File), d.File))
 		if err != nil {
-			c.fail(d.Pos, "nelze načíst %s", d.File)
+			c.fail(d.Pos, "cannot read %s", d.File)
 		}
 		for _, b := range data {
 			v.Init = append(v.Init, asm.N(int(b)))
@@ -259,10 +259,10 @@ func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 	case v.String && len(d.Init) > 0:
 		s, ok := d.Init[0].(*lang.Str)
 		if !ok || len(d.Init) > 1 {
-			c.fail(d.Pos, "řetězec se inicializuje literálem v uvozovkách")
+			c.fail(d.Pos, "a string is initialized with a quoted literal")
 		}
 		if len(s.S) > 255 {
-			c.fail(d.Pos, "řetězec je delší než 255 znaků")
+			c.fail(d.Pos, "string is longer than 255 characters")
 		}
 		v.Init = append(v.Init, asm.N(len(s.S)))
 		for i := 0; i < len(s.S); i++ {
@@ -273,7 +273,7 @@ func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 		for _, e := range d.Init {
 			x := c.mustConst(e)
 			if x < -128 || x > 255 {
-				c.fail(e.P(), "hodnota %d se nevejde do bajtu", x)
+				c.fail(e.P(), "value %d does not fit in a byte", x)
 			}
 			v.Init = append(v.Init, asm.N(x&0xFF))
 		}
@@ -281,11 +281,11 @@ func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 	case len(d.Init) > 0 && proc == nil:
 		op, ok := c.constOp(d.Init[0])
 		if !ok {
-			c.fail(d.Init[0].P(), "počáteční hodnota globální proměnné musí být konstanta")
+			c.fail(d.Init[0].P(), "the initial value of a global variable must be a constant")
 		}
 		if op.Sym == "" {
 			if v.Type() == TByte && (op.Off < -128 || op.Off > 255) {
-				c.fail(d.Init[0].P(), "hodnota %d se nevejde do bajtu", op.Off)
+				c.fail(d.Init[0].P(), "value %d does not fit in a byte", op.Off)
 			}
 			v.Init = append(v.Init, asm.N(op.Off&0xFF))
 			if v.Type() == TCard {
@@ -293,7 +293,7 @@ func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 			}
 		} else {
 			if v.Type() != TCard {
-				c.fail(d.Init[0].P(), "adresa se vejde jen do card nebo pointer")
+				c.fail(d.Init[0].P(), "an address fits only into card or pointer")
 			}
 			lo, hi := op, op
 			lo.Part, hi.Part = asm.Lo, asm.Hi
@@ -306,17 +306,17 @@ func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 			v.Len = len(v.Init)
 		}
 		if v.Len == 0 {
-			c.fail(d.Pos, "pole bez velikosti a bez počátečních hodnot")
+			c.fail(d.Pos, "array without a size and without initial values")
 		}
 		if len(v.Init) > v.Len {
-			c.fail(d.Pos, "víc počátečních hodnot (%d) než velikost pole (%d)", len(v.Init), v.Len)
+			c.fail(d.Pos, "more initial values (%d) than the array size (%d)", len(v.Init), v.Len)
 		}
 		for len(v.Init) < v.Len && v.HasInit {
 			v.Init = append(v.Init, asm.N(0))
 		}
 	}
 	if v.Const && !v.HasInit && !v.Fixed {
-		c.fail(d.Pos, "const tabulka potřebuje počáteční hodnoty")
+		c.fail(d.Pos, "a const table needs initial values")
 	}
 	if v.Shadow != nil && v.HasInit {
 		v.Shadow.Init = v.Init
@@ -325,14 +325,14 @@ func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 		v.Init, v.HasInit = nil, false
 	}
 	if v.Fixed && v.HasInit && v.Shadow == nil {
-		c.fail(d.Pos, "proměnná na pevné adrese nemůže mít počáteční hodnotu (kromě shadow registru)")
+		c.fail(d.Pos, "a variable at a fixed address cannot have an initial value (except a shadow register)")
 	}
 	if v.Ring {
 		if proc != nil {
-			c.fail(d.Pos, "ring musí být globální")
+			c.fail(d.Pos, "ring must be global")
 		}
 		if v.Len&(v.Len-1) != 0 || v.Len < 2 || v.Len > 256 {
-			c.fail(d.Pos, "velikost ring musí být mocnina 2 (2 až 256)")
+			c.fail(d.Pos, "ring size must be a power of 2 (2 to 256)")
 		}
 		v.Head = &Var{Name: v.Name + "'head", Elem: TByte, Hidden: true, Pos: d.Pos, NoInit: v.NoInit}
 		cnt := TByte
@@ -345,7 +345,7 @@ func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 		v.Static = true
 	}
 	if proc != nil && v.NoInit {
-		c.fail(d.Pos, "lokální proměnná nemůže být noinit (sdílí paměť přes overlay)")
+		c.fail(d.Pos, "a local variable cannot be noinit (it shares memory through the overlay)")
 	}
 	return v
 }
@@ -375,7 +375,7 @@ func (c *Compiler) declareGlobal(d *lang.VarDecl) {
 
 func (c *Compiler) declareBit(d *lang.BitDecl) {
 	if d.Reg == "" {
-		// příznak v RAM: v0.1 jeden bajt na příznak, bit 0
+		// flag in RAM: in v0.1 one byte per flag, bit 0
 		v := &Var{Name: d.Name + "'flag", Elem: TByte, Pos: d.Pos, Hidden: true}
 		if d.Init != nil {
 			x := c.mustConst(d.Init)
@@ -388,7 +388,7 @@ func (c *Compiler) declareBit(d *lang.BitDecl) {
 	}
 	r, ok := c.globals[d.Reg].(*Var)
 	if !ok || !r.Scalar() || r.Elem != TByte || r.Pointer {
-		c.fail(d.Pos, "%s není byte proměnná nebo registr", d.Reg)
+		c.fail(d.Pos, "%s is not a byte variable or register", d.Reg)
 	}
 	c.define(d.Name, d.Pos, &Bit{Name: d.Name, Reg: r, Lo: d.Lo, Hi: d.Hi})
 }
@@ -403,7 +403,7 @@ func (c *Compiler) declareProc(d *lang.ProcDecl) {
 		p.Ret = TCard
 	}
 	if d.Interrupt != "" && (len(d.Params) > 0 || d.Ret != "") {
-		c.fail(d.Pos, "obsluha přerušení nemá parametry ani návratovou hodnotu")
+		c.fail(d.Pos, "an interrupt handler has no parameters and no return value")
 	}
 	if d.Extern != nil {
 		p.Extern = true
@@ -411,29 +411,29 @@ func (c *Compiler) declareProc(d *lang.ProcDecl) {
 		used := map[string]bool{}
 		for _, prm := range d.Params {
 			if prm.Reg == "" || !strings.Contains("AXY", prm.Reg) || len(prm.Reg) != 1 {
-				c.fail(d.Pos, "parametr %s musí mít registr @A, @X nebo @Y", prm.Name)
+				c.fail(d.Pos, "parameter %s must have a register @A, @X or @Y", prm.Name)
 			}
 			if prm.Type.Base != "byte" || prm.Type.Pointer || prm.Type.Array {
-				c.fail(d.Pos, "parametr extern procedury musí být byte")
+				c.fail(d.Pos, "a parameter of an extern procedure must be byte")
 			}
 			if used[prm.Reg] {
-				c.fail(d.Pos, "registr %s je použit dvakrát", prm.Reg)
+				c.fail(d.Pos, "register %s is used twice", prm.Reg)
 			}
 			used[prm.Reg] = true
 			p.Params = append(p.Params, &Var{Name: prm.Name, Elem: TByte, Label: prm.Reg})
 		}
 		if d.RetReg != "" && d.RetReg != "A" {
-			c.fail(d.Pos, "návratová hodnota extern procedury musí být v @A")
+			c.fail(d.Pos, "the return value of an extern procedure must be in @A")
 		}
 		if p.Ret == TCard {
-			c.fail(d.Pos, "extern procedura zatím vrací jen byte")
+			c.fail(d.Pos, "an extern procedure can only return byte for now")
 		}
 	}
 	c.define(d.Name, d.Pos, p)
 	c.procs = append(c.procs, p)
 }
 
-// collectLocals projde těla procedur a přidělí parametrům a lokálům posuny v rámci.
+// collectLocals walks procedure bodies and assigns frame offsets to parameters and locals.
 func (c *Compiler) collectLocals() {
 	for _, p := range c.procs {
 		if p.Extern {
@@ -442,10 +442,10 @@ func (c *Compiler) collectLocals() {
 		off := 0
 		add := func(v *Var) {
 			if _, dup := p.Locals[v.Name]; dup {
-				c.fail(v.Pos, "lokální jméno %q je už definováno", v.Name)
+				c.fail(v.Pos, "local name %q is already defined", v.Name)
 			}
 			if builtinNames[v.Name] {
-				c.fail(v.Pos, "jméno %q je vyhrazené", v.Name)
+				c.fail(v.Pos, "name %q is reserved", v.Name)
 			}
 			p.Locals[v.Name] = v
 			p.LocalList = append(p.LocalList, v)
@@ -460,10 +460,10 @@ func (c *Compiler) collectLocals() {
 		for _, prm := range p.Decl.Params {
 			d := &lang.VarDecl{Pos: p.Decl.Pos, Name: prm.Name, Type: prm.Type}
 			if prm.Type.Array || prm.Type.String || prm.Type.Ring {
-				c.fail(p.Decl.Pos, "parametr %s: pole se předávají jako byte pointer", prm.Name)
+				c.fail(p.Decl.Pos, "parameter %s: arrays are passed as byte pointer", prm.Name)
 			}
 			v := c.newVar(d, p)
-			v.Static = false // ukazatel jako parametr leží v rámci, před použitím se kopíruje
+			v.Static = false // a pointer parameter lives in the frame and is copied before use
 			if v.Pointer {
 				v.Static = false
 			}
@@ -477,11 +477,11 @@ func (c *Compiler) collectLocals() {
 				case *lang.VarDecl:
 					v := c.newVar(d, p)
 					if v.HasInit && (v.Array || v.String) {
-						c.fail(d.Pos, "lokální pole nemůže mít počáteční hodnoty; použijte globální const tabulku")
+						c.fail(d.Pos, "a local array cannot have initial values; use a global const table")
 					}
 					add(v)
 				case *lang.ConstDecl, *lang.BitDecl, *lang.ProcDecl:
-					c.fail(s.P(), "uvnitř procedury jsou povolené jen deklarace proměnných")
+					c.fail(s.P(), "only variable declarations are allowed inside a procedure")
 				case *lang.If:
 					for _, b := range d.Blocks {
 						walk(b)
@@ -508,7 +508,7 @@ func (c *Compiler) newLabel(prefix string) string {
 	return fmt.Sprintf("_%s%d", prefix, c.lbl)
 }
 
-// ---- alokace a výstup ----
+// ---- allocation and output ----
 
 type zpPool struct{ free [256]bool }
 
@@ -532,7 +532,7 @@ func (z *zpPool) take(size int) (int, bool) {
 }
 
 func (c *Compiler) layoutFrames() map[string]int {
-	// overlay: báze instance = max(báze volajícího + velikost volajícího) v rámci jednoho kořene
+	// overlay: instance base = max(caller base + caller size) within one root
 	roots := []*Inst{}
 	for _, in := range c.insts {
 		if in.Main || in.Proc != nil && in.Proc.Interrupt != "" {
@@ -543,7 +543,7 @@ func (c *Compiler) layoutFrames() map[string]int {
 			in.Size += in.Proc.LocalSize
 		}
 	}
-	// topologické pořadí (rekurze už je vyloučená)
+	// topological order (recursion is already ruled out)
 	order := []*Inst{}
 	seen := map[*Inst]bool{}
 	var visit func(in *Inst)
@@ -563,7 +563,7 @@ func (c *Compiler) layoutFrames() map[string]int {
 	regionBase := map[*Inst]int{}
 	total := 0
 	for _, r := range roots {
-		// kořen a jeho strom
+		// root and its call tree
 		tree := map[*Inst]bool{}
 		var mark func(in *Inst)
 		mark = func(in *Inst) {
@@ -578,7 +578,7 @@ func (c *Compiler) layoutFrames() map[string]int {
 		mark(r)
 		ext := 0
 		base := map[*Inst]int{}
-		// procházet v obráceném topologickém pořadí (volající před volanými)
+		// walk in reverse topological order (callers before callees)
 		for i := len(order) - 1; i >= 0; i-- {
 			in := order[i]
 			if !tree[in] {
@@ -633,7 +633,7 @@ func (c *Compiler) checkRecursion() {
 					names = append(names, s.Proc.Name)
 				}
 				names = append(names, cal.Proc.Name)
-				c.fail(cal.Proc.Decl.Pos, "rekurze není povolená: %s", strings.Join(names, " → "))
+				c.fail(cal.Proc.Decl.Pos, "recursion is not allowed: %s", strings.Join(names, " -> "))
 			}
 			if state[cal] == 0 {
 				dfs(cal)
@@ -655,7 +655,7 @@ type access struct {
 	pos    lang.Pos
 }
 
-// sharedWarnings upozorní na neatomické úpravy dat sdílených s obsluhou přerušení.
+// sharedWarnings warns about non-atomic changes of data shared with an interrupt handler.
 func (c *Compiler) sharedWarnings() {
 	keys := make([]string, 0, len(c.shared))
 	for k := range c.shared {
@@ -673,14 +673,14 @@ func (c *Compiler) sharedWarnings() {
 		}
 		for _, a := range acc {
 			if !a.atomic {
-				c.warn(a.pos, "%s mění hlavní program i obsluha přerušení; obalte úpravu blokem atomic", k)
+				c.warn(a.pos, "%s is modified by both the main program and an interrupt handler; wrap the change in an atomic block", k)
 			}
 		}
 	}
 	for _, name := range []string{"__mp", "__rt"} {
 		if len(c.helperCtx[name]) > 1 {
-			what := map[string]string{"__mp": "mem[], ukazatele z parametrů a velká pole", "__rt": "násobení a dělení"}[name]
-			c.Warnings = append(c.Warnings, fmt.Sprintf("varování: %s se používá v hlavním programu i v obsluze přerušení; pomocné proměnné nejsou chráněné (v0.1)", what))
+			what := map[string]string{"__mp": "mem[], pointer parameters and large arrays", "__rt": "multiplication and division"}[name]
+			c.Warnings = append(c.Warnings, fmt.Sprintf("warning: %s is used in the main program and in an interrupt handler; the helper variables are not protected (v0.1)", what))
 		}
 	}
 }
@@ -700,7 +700,7 @@ func (c *Compiler) finish() (*Result, error) {
 			pool.free[a] = false
 		}
 	}
-	// pevné proměnné v zero page
+	// fixed variables in the zero page
 	for _, g := range c.globals {
 		if v, ok := g.(*Var); ok && v.Fixed && v.Addr < 256 {
 			for i := 0; i < v.Size() && v.Addr+i < 256; i++ {
@@ -712,7 +712,7 @@ func (c *Compiler) finish() (*Result, error) {
 	var after []*Var
 	place := func(v *Var, mustZP bool) {
 		if v.NoInit && v.HasInit {
-			after = append(after, v) // musí být v binárce
+			after = append(after, v) // must be in the binary
 			return
 		}
 		if a, ok := pool.take(v.Size()); ok {
@@ -722,12 +722,12 @@ func (c *Compiler) finish() (*Result, error) {
 			return
 		}
 		if mustZP {
-			c.fail(v.Pos, "%s musí ležet v zero page, ale zero page je plná", v.Name)
+			c.fail(v.Pos, "%s must be in the zero page, but the zero page is full", v.Name)
 		}
 		after = append(after, v)
 	}
 	used := c.usedVars()
-	// 1. ukazatele a pomocné ukazatele
+	// 1. pointers and helper pointers
 	for _, v := range c.gvars {
 		if v.Pointer && used[v] && v != c.mp {
 			place(v, true)
@@ -739,7 +739,7 @@ func (c *Compiler) finish() (*Result, error) {
 	if c.rt != nil {
 		place(c.rt, false)
 	}
-	// 2. rámce procedur
+	// 2. procedure frames
 	framesInZP := false
 	if total > 0 {
 		if a, ok := pool.take(total); ok {
@@ -747,13 +747,13 @@ func (c *Compiler) finish() (*Result, error) {
 			framesInZP = true
 		}
 	}
-	// 3. skaláry
+	// 3. scalars
 	for _, v := range c.gvars {
 		if !v.Pointer && v.Scalar() && used[v] && v != c.mp && v != c.rt {
 			place(v, false)
 		}
 	}
-	// 4. zbytek
+	// 4. the rest
 	for _, v := range c.gvars {
 		if !v.Scalar() && used[v] && !v.InZP && !v.Const && v != c.rt && v != c.mp {
 			after = append(after, v)
@@ -762,14 +762,14 @@ func (c *Compiler) finish() (*Result, error) {
 	for _, in := range c.insts {
 		p.Alias[in.FrameSym] = asm.S("__frames", in.Base)
 	}
-	// datová sekce: data proměnných noinit s počáteční hodnotou
+	// data section: data of noinit variables with an initial value
 	for _, v := range after {
 		if v.NoInit && v.HasInit {
 			p.Label(v.Label)
 			p.Bytes(v.Init...)
 		}
 	}
-	// vyhrazené místo za kódem
+	// reserved space after the code
 	for _, v := range after {
 		if !(v.NoInit && v.HasInit) {
 			p.Reserve(v.Label, v.Size())
@@ -789,7 +789,7 @@ func (c *Compiler) finish() (*Result, error) {
 			}
 		}
 	}
-	// kontroly paměti
+	// memory checks
 	limit := c.end
 	if limit < 0 {
 		limit = 0xFFF7
@@ -803,11 +803,11 @@ func (c *Compiler) finish() (*Result, error) {
 		return nil, c.overflowError(res, res.Top-1-limit, limit)
 	}
 	if !c.T.inRAM(c.org, res.Top-1) && len(c.T.RAM) > 0 && res.Top > c.org {
-		return nil, fmt.Errorf("program ($%04X–$%04X) nepadne celý do RAM targetu %s", c.org, res.Top-1, c.T.Name)
+		return nil, fmt.Errorf("the program ($%04X-$%04X) does not fit entirely into the RAM of target %s", c.org, res.Top-1, c.T.Name)
 	}
 	for _, r := range c.T.Reserve {
 		if c.org <= r.Hi && res.Top-1 >= r.Lo {
-			return nil, fmt.Errorf("program ($%04X–$%04X) zasahuje do rezervovaného rozsahu $%04X–$%04X", c.org, res.Top-1, r.Lo, r.Hi)
+			return nil, fmt.Errorf("the program ($%04X-$%04X) overlaps the reserved range $%04X-$%04X", c.org, res.Top-1, r.Lo, r.Hi)
 		}
 	}
 	out := &Result{Target: c.T, Asm: res, Org: c.org, Bin: res.Code, Warnings: c.Warnings, Labels: res.Labels,
@@ -859,14 +859,14 @@ func (c *Compiler) overflowError(res *asm.Result, over, limit int) error {
 		procs = append(procs, sz{l, endA - starts[l]})
 	}
 	sort.Slice(procs, func(i, j int) bool { return procs[i].n > procs[j].n })
-	msg := fmt.Sprintf("program přesahuje limit $%04X o %d B", limit, over)
+	msg := fmt.Sprintf("the program exceeds the limit $%04X by %d B", limit, over)
 	for i := 0; i < len(procs) && i < 3; i++ {
 		msg += fmt.Sprintf("; %s %d B", procs[i].name, procs[i].n)
 	}
 	return fmt.Errorf("%s", msg)
 }
 
-// usedVars vrací proměnné, na které kód odkazuje (ostatní se nealokují).
+// usedVars returns the variables referenced by code (others are not allocated).
 func (c *Compiler) usedVars() map[*Var]bool {
 	refs := map[string]bool{}
 	for _, it := range c.p.Items {
@@ -891,13 +891,13 @@ func (c *Compiler) usedVars() map[*Var]bool {
 func (c *Compiler) memMap(r *Result, frames map[string]int, framesInZP bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Tantal %s, target %s\n\n", Version, c.T.Name)
-	fmt.Fprintf(&b, "Kód a data:   $%04X–$%04X (%d B)\n", c.org, r.Asm.End-1, r.Asm.End-c.org)
+	fmt.Fprintf(&b, "Code and data: $%04X-$%04X (%d B)\n", c.org, r.Asm.End-1, r.Asm.End-c.org)
 	if r.VarTop > r.Asm.End {
-		fmt.Fprintf(&b, "Proměnné:     $%04X–$%04X (%d B za kódem)\n\n", r.Asm.End, r.VarTop-1, r.VarTop-r.Asm.End)
+		fmt.Fprintf(&b, "Variables:     $%04X-$%04X (%d B after the code)\n\n", r.Asm.End, r.VarTop-1, r.VarTop-r.Asm.End)
 	} else {
-		fmt.Fprintf(&b, "Proměnné:     jen zero page\n\n")
+		fmt.Fprintf(&b, "Variables:     zero page only\n\n")
 	}
-	fmt.Fprintf(&b, "Proměnné:\n")
+	fmt.Fprintf(&b, "Variables:\n")
 	for _, v := range r.Vars {
 		if v.Fixed {
 			continue
@@ -918,11 +918,11 @@ func (c *Compiler) memMap(r *Result, frames map[string]int, framesInZP bool) str
 		if framesInZP {
 			where = "ZP"
 		}
-		fmt.Fprintf(&b, "\nRámce procedur (overlay, %s, $%04X, celkem %d B):\n", where, base, total)
+		fmt.Fprintf(&b, "\nProcedure frames (overlay, %s, $%04X, total %d B):\n", where, base, total)
 		insts := append([]*Inst(nil), c.insts...)
 		sort.Slice(insts, func(i, j int) bool { return insts[i].Base < insts[j].Base })
 		for _, in := range insts {
-			name := "hlavní program"
+			name := "main program"
 			if in.Proc != nil {
 				name = in.Proc.Name
 				if in.Ctx != "main" {
@@ -944,7 +944,7 @@ func (c *Compiler) memMap(r *Result, frames map[string]int, framesInZP bool) str
 			b.WriteString("\n")
 		}
 	}
-	fmt.Fprintf(&b, "\nZero page (kompilátor):\n")
+	fmt.Fprintf(&b, "\nZero page (compiler):\n")
 	var zp []string
 	for _, v := range r.Vars {
 		if v.InZP {
@@ -952,7 +952,7 @@ func (c *Compiler) memMap(r *Result, frames map[string]int, framesInZP bool) str
 		}
 	}
 	if framesInZP && total > 0 {
-		zp = append(zp, fmt.Sprintf("$%02X–$%02X rámce", base, base+total-1))
+		zp = append(zp, fmt.Sprintf("$%02X-$%02X frames", base, base+total-1))
 	}
 	sort.Strings(zp)
 	for _, s := range zp {

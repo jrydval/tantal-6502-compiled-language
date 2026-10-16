@@ -20,17 +20,17 @@ func (g *gen) stmt(s lang.Stmt) {
 	switch x := s.(type) {
 	case *lang.VarDecl:
 		if g.inst.Proc == nil {
-			g.fail(x.Pos, "deklarace v hlavním programu patří na nejvyšší úroveň souboru")
+			g.fail(x.Pos, "declarations of the main program belong at the top level of the file")
 		}
 		if len(x.Init) > 0 && !x.Type.Array {
 			g.assign(&lang.Assign{Pos: x.Pos, Target: &lang.Ident{Pos: x.Pos, Name: x.Name}, Op: "=", Value: x.Init[0]})
 		}
 	case *lang.Directive:
 		if x.Name != "cycles" {
-			g.fail(x.Pos, "direktiva .%s patří na nejvyšší úroveň souboru", x.Name)
+			g.fail(x.Pos, "directive .%s belongs at the top level of the file", x.Name)
 		}
 		if !g.c.cyclesWarned {
-			g.warn(x.Pos, ".cycles se ve verzi %s zatím nekontroluje; cykly ukazuje listing", Version)
+			g.warn(x.Pos, ".cycles is not checked yet in version %s; the listing shows cycles", Version)
 			g.c.cyclesWarned = true
 		}
 	case *lang.Assign:
@@ -38,7 +38,7 @@ func (g *gen) stmt(s lang.Stmt) {
 	case *lang.Push:
 		g.ringPush(x)
 	case *lang.If:
-		// if podmínka then exit fi → jeden podmíněný skok
+		// if condition then exit fi -> a single conditional branch
 		if len(x.Conds) == 1 && x.Else == nil && len(x.Blocks[0]) == 1 && len(g.loops) > 0 {
 			if _, ok := x.Blocks[0][0].(*lang.Exit); ok && (len(g.atomicAt) == 0 || g.atomicAt[len(g.atomicAt)-1] < len(g.loops)) {
 				g.cond(x.Conds[0], g.loops[len(g.loops)-1], true)
@@ -91,10 +91,10 @@ func (g *gen) stmt(s lang.Stmt) {
 		g.forStmt(x)
 	case *lang.Exit:
 		if len(g.loops) == 0 {
-			g.fail(x.Pos, "exit mimo smyčku")
+			g.fail(x.Pos, "exit outside a loop")
 		}
 		if n := len(g.atomicAt); n > 0 && g.atomicAt[n-1] >= len(g.loops) {
-			g.fail(x.Pos, "exit nesmí opustit blok atomic")
+			g.fail(x.Pos, "exit must not leave an atomic block")
 		}
 		g.jmp(g.loops[len(g.loops)-1])
 	case *lang.Return:
@@ -106,7 +106,7 @@ func (g *gen) stmt(s lang.Stmt) {
 		case *lang.Wait:
 			g.genWait(e)
 		default:
-			g.fail(x.Pos, "výraz bez účinku")
+			g.fail(x.Pos, "expression has no effect")
 		}
 	case *lang.Asm:
 		g.asmBlock(x)
@@ -119,7 +119,7 @@ func (g *gen) stmt(s lang.Stmt) {
 		g.at(x.Pos)
 		g.imp("PLP")
 	default:
-		g.fail(s.P(), "tento příkaz sem nepatří")
+		g.fail(s.P(), "this statement does not belong here")
 	}
 }
 
@@ -136,11 +136,11 @@ func endsWithJump(ss []lang.Stmt) bool {
 
 func (g *gen) ret(x *lang.Return) {
 	if len(g.atomicAt) > 0 {
-		g.fail(x.Pos, "return nesmí opustit blok atomic")
+		g.fail(x.Pos, "return must not leave an atomic block")
 	}
 	if g.inst.Main {
 		if x.X != nil {
-			g.fail(x.Pos, "hlavní program nevrací hodnotu")
+			g.fail(x.Pos, "the main program does not return a value")
 		}
 		g.jmp("__exit")
 		return
@@ -149,7 +149,7 @@ func (g *gen) ret(x *lang.Return) {
 	if x.X != nil {
 		switch p.Ret {
 		case TVoid:
-			g.fail(x.Pos, "procedura %s nevrací hodnotu", p.Name)
+			g.fail(x.Pos, "procedure %s does not return a value", p.Name)
 		case TByte:
 			if g.typeOf(x.X).wide() {
 				g.narrowWarn(x.X)
@@ -159,7 +159,7 @@ func (g *gen) ret(x *lang.Return) {
 			g.genWord(x.X)
 		}
 	} else if p.Ret != TVoid {
-		g.fail(x.Pos, "procedura %s musí vracet hodnotu", p.Name)
+		g.fail(x.Pos, "procedure %s must return a value", p.Name)
 	}
 	if p.Interrupt != "" {
 		g.jmp(g.inst.Label + "_end")
@@ -172,10 +172,10 @@ func (g *gen) narrowWarn(e lang.Expr) {
 	if v, ok := g.c.constEval(e); ok && v >= -128 && v <= 255 {
 		return
 	}
-	g.warn(e.P(), "16bitová hodnota se ukládá do bajtu, horní bajt se ztratí")
+	g.warn(e.P(), "a 16-bit value is stored into a byte, the high byte is lost")
 }
 
-// ---- přiřazení ----
+// ---- assignment ----
 
 func (g *gen) assign(x *lang.Assign) {
 	switch t := x.Target.(type) {
@@ -183,7 +183,7 @@ func (g *gen) assign(x *lang.Assign) {
 		switch s := g.lookup(t.Name).(type) {
 		case *Var:
 			if !s.Scalar() {
-				g.fail(t.Pos, "do pole %s nelze přiřadit celé; použijte index", s.Name)
+				g.fail(t.Pos, "cannot assign to the whole array %s; use an index", s.Name)
 			}
 			g.varAssign(s, x)
 			return
@@ -191,9 +191,9 @@ func (g *gen) assign(x *lang.Assign) {
 			g.bitAssign(s, x.Op, x.Value, x.Pos)
 			return
 		case nil:
-			g.fail(t.Pos, "neznámé jméno %q", t.Name)
+			g.fail(t.Pos, "unknown name %q", t.Name)
 		}
-		g.fail(t.Pos, "do %s nelze přiřadit", t.Name)
+		g.fail(t.Pos, "cannot assign to %s", t.Name)
 	case *lang.BitRef:
 		g.bitAssign(g.bitOf(t), x.Op, x.Value, x.Pos)
 	case *lang.Index:
@@ -203,16 +203,16 @@ func (g *gen) assign(x *lang.Assign) {
 		}
 		g.indexStore(t, value)
 	default:
-		g.fail(x.Pos, "do tohoto výrazu nelze přiřadit")
+		g.fail(x.Pos, "cannot assign to this expression")
 	}
 }
 
 func (g *gen) varAssign(v *Var, x *lang.Assign) {
 	if v.ReadOnly {
-		g.fail(x.Pos, "%s je jen pro čtení", v.Name)
+		g.fail(x.Pos, "%s is read-only", v.Name)
 	}
 	if x.Op != "=" && v.WriteOnly && v.Shadow == nil {
-		g.fail(x.Pos, "%s je jen pro zápis; složené přiřazení potřebuje shadow", v.Name)
+		g.fail(x.Pos, "%s is write-only; compound assignment needs shadow", v.Name)
 	}
 	wide := v.Type().wide()
 	if x.Op != "=" || wide {
@@ -274,7 +274,7 @@ func (g *gen) varAssign(v *Var, x *lang.Assign) {
 	g.storeTo(v, x.Pos)
 }
 
-// ---- indexy ----
+// ---- indexing ----
 
 func (g *gen) indexBase(x *lang.Index) *Var {
 	if x.Base == "mem" {
@@ -282,12 +282,12 @@ func (g *gen) indexBase(x *lang.Index) *Var {
 	}
 	v, ok := g.lookup(x.Base).(*Var)
 	if !ok || !(v.Array || v.String || v.Pointer || v.Ring) {
-		g.fail(x.Pos, "%s nelze indexovat", x.Base)
+		g.fail(x.Pos, "%s cannot be indexed", x.Base)
 	}
 	return v
 }
 
-// ptrOperand vrací operand ukazatele v zero page (ukazatel z rámce se zkopíruje do __mp; mění A).
+// ptrOperand returns a zero page pointer operand (a frame pointer is copied to __mp; clobbers A).
 func (g *gen) ptrOperand(v *Var) asm.Operand {
 	if v.Static {
 		return g.vop(v)
@@ -310,7 +310,7 @@ func (g *gen) indexLoad(x *lang.Index) {
 	v := g.indexBase(x)
 	idxWide := g.typeOf(x.Idx).wide()
 	switch {
-	case v == nil: // mem[adresa]
+	case v == nil: // mem[address]
 		g.helper("__mp")
 		mp := g.c.useMP()
 		g.genWord(x.Idx)
@@ -345,7 +345,7 @@ func (g *gen) indexLoad(x *lang.Index) {
 		g.indY("LDA", pp)
 	default:
 		if v.WriteOnly {
-			g.fail(x.Pos, "%s je jen pro zápis", v.Name)
+			g.fail(x.Pos, "%s is write-only", v.Name)
 		}
 		base := g.vop(v)
 		if idxWide || v.Len > 256 {
@@ -363,7 +363,7 @@ func (g *gen) indexLoad(x *lang.Index) {
 	}
 }
 
-// addrInMP: __mp = base + index (16 bitů), Y = 0.
+// addrInMP: __mp = base + index (16 bits), Y = 0.
 func (g *gen) addrInMP(base asm.Operand, idx lang.Expr) {
 	g.helper("__mp")
 	mp := g.c.useMP()
@@ -385,10 +385,10 @@ func (g *gen) addrInMP(base asm.Operand, idx lang.Expr) {
 func (g *gen) indexStore(x *lang.Index, value lang.Expr) {
 	v := g.indexBase(x)
 	if v != nil && (v.ReadOnly || v.Const) {
-		g.fail(x.Pos, "%s je jen pro čtení", v.Name)
+		g.fail(x.Pos, "%s is read-only", v.Name)
 	}
 	if v != nil && v.Ring {
-		g.fail(x.Pos, "do ring se zapisuje příkazem %s <- hodnota", v.Name)
+		g.fail(x.Pos, "write to a ring with %s <- value", v.Name)
 	}
 	if g.typeOf(value).wide() {
 		g.narrowWarn(value)
@@ -506,7 +506,7 @@ func (g *gen) storeTempWord(t asm.Operand) {
 	g.mem("STX", asm.S(t.Sym, t.Off+1))
 }
 
-// copyToMPKeepA zkopíruje 16bitovou adresu z t do __mp, A zachová a nastaví Y = 0.
+// copyToMPKeepA copies the 16-bit address at t to __mp, keeps A and sets Y = 0.
 func (g *gen) copyToMPKeepA(t asm.Operand) {
 	g.helper("__mp")
 	mp := g.c.useMP()
@@ -524,14 +524,14 @@ func (g *gen) copyToMPKeepA(t asm.Operand) {
 func (g *gen) forStmt(x *lang.For) {
 	v, ok := g.lookup(x.Var).(*Var)
 	if !ok || !v.Scalar() || v.Pointer || v.Fixed {
-		g.fail(x.Pos, "čítač smyčky for musí být byte nebo card proměnná")
+		g.fail(x.Pos, "the for loop counter must be a byte or card variable")
 	}
 	wide := v.Elem == TCard
 	vop := g.vop(v)
 	vhi := asm.S(vop.Sym, vop.Off+1)
 	exit, top := g.newLabel("for_end"), g.newLabel("for")
 
-	// start
+	// start value
 	if wide {
 		g.genWord(x.From)
 		g.mem("STA", vop)
@@ -545,12 +545,12 @@ func (g *gen) forStmt(x *lang.For) {
 	if x.Step != nil {
 		s, ok := g.c.constEval(x.Step)
 		if !ok || s < 1 || s > 255 {
-			g.fail(x.Step.P(), "step musí být konstanta 1 až 255")
+			g.fail(x.Step.P(), "step must be a constant from 1 to 255")
 		}
 		step = s
 	}
 
-	// mez: konstanta, nebo spočítaná jednou na začátku
+	// bound: a constant, or evaluated once at the start
 	boundWide := g.typeOf(x.To).wide() || wide
 	var last val
 	used := 0
@@ -578,10 +578,10 @@ func (g *gen) forStmt(x *lang.For) {
 			cmpBound = memVal(t, TByte)
 		}
 	}
-	// prázdný rozsah: to: start > mez, until: start >= mez
+	// empty range: to: start > bound, until: start >= bound
 	cur := memVal(vop, v.Elem)
 	if boundWide {
-		// start < mez (until) nebo start <= mez (to), jinak konec
+		// start < bound (until) or start <= bound (to), otherwise done
 		if x.Exclusive {
 			g.part("LDA", cur.lo())
 			g.part("CMP", cmpBound.lo())
@@ -607,7 +607,7 @@ func (g *gen) forStmt(x *lang.For) {
 			g.label(skip)
 		}
 	}
-	// poslední hodnota čítače
+	// last value of the counter
 	if bconst {
 		lv := bc
 		if x.Exclusive {
@@ -617,7 +617,7 @@ func (g *gen) forStmt(x *lang.For) {
 			if x.Exclusive && bc == 256 {
 				lv = 255
 			} else {
-				g.warn(x.To.P(), "mez může přesáhnout rozsah byte čítače")
+				g.warn(x.To.P(), "the bound may exceed the range of a byte counter")
 				lv &= 0xFF
 			}
 		}
@@ -628,12 +628,12 @@ func (g *gen) forStmt(x *lang.For) {
 		last = val{imm: true, op: asm.N(lv & 0xFFFF), t: t}
 	} else {
 		if !wide && boundWide && !x.Exclusive {
-			g.warn(x.To.P(), "mez může přesáhnout rozsah byte čítače")
+			g.warn(x.To.P(), "the bound may exceed the range of a byte counter")
 		}
 		if x.Exclusive {
 			b := cmpBound.op
 			if wide || boundWide {
-				// last = mez - 1 (16 bitů); u byte čítače se použije dolní bajt
+				// last = bound - 1 (16 bits); a byte counter uses the low byte
 				skip := g.newLabel("dec")
 				g.mem("LDA", b)
 				g.br("BNE", skip)
@@ -684,7 +684,7 @@ func (g *gen) forStmt(x *lang.For) {
 			g.jmp(top)
 		}
 	} else {
-		// konec, když last - i < step
+		// done when last - i < step
 		if !wide {
 			g.part("LDA", last.lo())
 			g.imp("SEC")
@@ -726,7 +726,7 @@ func (g *gen) forStmt(x *lang.For) {
 	g.free(used)
 }
 
-// ---- volání ----
+// ---- calls ----
 
 func (c *Compiler) instFor(p *Proc, ctx string, pos lang.Pos) *Inst {
 	key := "main"
@@ -735,7 +735,7 @@ func (c *Compiler) instFor(p *Proc, ctx string, pos lang.Pos) *Inst {
 	}
 	if in, ok := p.Insts[key]; ok {
 		if !p.IrqSafe && in.Ctx != ctx {
-			c.fail(pos, "procedura %s je volaná z hlavního programu i z přerušení (%s a %s); označte ji irqsafe", p.Name, in.Ctx, ctx)
+			c.fail(pos, "procedure %s is called from the main program and from an interrupt (%s and %s); mark it irqsafe", p.Name, in.Ctx, ctx)
 		}
 		return in
 	}
@@ -752,27 +752,27 @@ func (c *Compiler) instFor(p *Proc, ctx string, pos lang.Pos) *Inst {
 
 func (g *gen) instFor(p *Proc, pos lang.Pos) *Inst {
 	if p.Interrupt != "" {
-		g.fail(pos, "obsluhu přerušení %s nelze volat", p.Name)
+		g.fail(pos, "interrupt handler %s cannot be called", p.Name)
 	}
 	in := g.c.instFor(p, g.inst.Ctx, pos)
 	g.inst.Calls[in] = true
 	return in
 }
 
-// call vygeneruje volání; výsledek je v A (byte) nebo A/X (card).
+// call generates a call; the result is in A (byte) or A/X (card).
 func (g *gen) call(x *lang.Call) {
 	if g.builtin(x) {
 		return
 	}
 	p, ok := g.c.globals[x.Name].(*Proc)
 	if !ok {
-		g.fail(x.Pos, "neznámá procedura %q", x.Name)
+		g.fail(x.Pos, "unknown procedure %q", x.Name)
 	}
 	if len(x.Args) != len(p.Params) {
-		g.fail(x.Pos, "%s očekává %d argumentů, dostala %d", p.Name, len(p.Params), len(x.Args))
+		g.fail(x.Pos, "%s expects %d arguments, got %d", p.Name, len(p.Params), len(x.Args))
 	}
-	// hodnoty argumentů zleva doprava; složité do dočasných proměnných.
-	// Jediný složitý bajtový argument pro registr A se spočítá až nakonec přímo do A.
+	// argument values left to right; complex ones into temporaries.
+	// A single complex byte argument for register A is evaluated last, directly into A.
 	vals := make([]val, len(x.Args))
 	used := 0
 	lateA := -1
@@ -787,7 +787,7 @@ func (g *gen) call(x *lang.Call) {
 		nbytes += prm.Size()
 	}
 	if nbytes > 3 && !p.Extern {
-		complexN = 0 // sloty v rámci volaného: složité argumenty musí být spočítané předem
+		complexN = 0 // slots in the callee frame: complex arguments must be evaluated beforehand
 	}
 	for i, a := range x.Args {
 		if complexN == 1 && !p.Params[i].Type().wide() {
@@ -878,7 +878,7 @@ func (g *gen) call(x *lang.Call) {
 
 func (g *gen) argc(x *lang.Call, n int) {
 	if len(x.Args) != n {
-		g.fail(x.Pos, "%s očekává %d argumentů", x.Name, n)
+		g.fail(x.Pos, "%s expects %d arguments", x.Name, n)
 	}
 }
 
@@ -889,7 +889,7 @@ func (g *gen) ringArg(x *lang.Call) *Var {
 			return v
 		}
 	}
-	g.fail(x.Pos, "%s vyžaduje kruhový buffer (ring)", x.Name)
+	g.fail(x.Pos, "%s needs a ring buffer (ring)", x.Name)
 	return nil
 }
 
@@ -915,7 +915,7 @@ func (g *gen) builtin(x *lang.Call) bool {
 	case "sizeof":
 		v, ok := g.c.constEval(x)
 		if !ok {
-			g.fail(x.Pos, "sizeof vyžaduje globální proměnnou")
+			g.fail(x.Pos, "sizeof needs a global variable")
 		}
 		g.imm("LDA", v)
 		g.imm("LDX", v>>8)
@@ -928,7 +928,7 @@ func (g *gen) builtin(x *lang.Call) bool {
 		}
 		switch {
 		case v == nil:
-			g.fail(x.Pos, "len vyžaduje řetězec, ukazatel nebo ring")
+			g.fail(x.Pos, "len needs a string, pointer or ring")
 		case v.Ring:
 			op := asm.S(v.Count.Label, 0)
 			g.mem("LDA", op)
@@ -941,7 +941,7 @@ func (g *gen) builtin(x *lang.Call) bool {
 		case v.Array || v.String:
 			g.mem("LDA", g.vop(v))
 		default:
-			g.fail(x.Pos, "len vyžaduje řetězec, ukazatel nebo ring")
+			g.fail(x.Pos, "len needs a string, pointer or ring")
 		}
 	case "pop":
 		g.argc(x, 1)
@@ -970,12 +970,12 @@ func (g *gen) builtin(x *lang.Call) bool {
 	return true
 }
 
-// ---- kruhový buffer ----
+// ---- ring buffer ----
 
 func (g *gen) ringPush(x *lang.Push) {
 	v, ok := g.lookup(x.Ring).(*Var)
 	if !ok || !v.Ring {
-		g.fail(x.Pos, "%s není kruhový buffer (ring)", x.Ring)
+		g.fail(x.Pos, "%s is not a ring buffer (ring)", x.Ring)
 	}
 	if g.typeOf(x.Value).wide() {
 		g.narrowWarn(x.Value)
@@ -1186,14 +1186,14 @@ func (g *gen) asmBlock(x *lang.Asm) {
 	}
 }
 
-// ---- generování celého programu ----
+// ---- whole program generation ----
 
 func (c *Compiler) generate() {
 	c.p = asm.New(c.org)
 	c.mainInst = &Inst{Main: true, Ctx: "main", Label: "main", FrameSym: "F_main", Calls: map[*Inst]bool{}}
 	c.insts = append(c.insts, c.mainInst)
 
-	// obsluhy přerušení jsou kořeny
+	// interrupt handlers are roots
 	var handlers []*Inst
 	for _, p := range c.procs {
 		if p.Interrupt != "" {
@@ -1224,7 +1224,7 @@ func (c *Compiler) generate() {
 	}
 	c.runtime()
 
-	// data: const tabulky, literály, obrazy počátečních hodnot
+	// data: const tables, literals, initial value images
 	used := c.usedVars()
 	for _, v := range c.gvars {
 		if v.Const && used[v] {
@@ -1236,13 +1236,13 @@ func (c *Compiler) generate() {
 		c.data[i]()
 	}
 
-	// startovací kód před hlavní program
+	// startup code goes before the main program
 	usedNow := c.usedVars()
 	body := c.p.Items
 	c.p.Items = nil
 	c.startup(handlers, usedNow)
 	c.p.Items = append(c.p.Items, body...)
-	// obrazy počátečních hodnot polí (vytvořené ve startup)
+	// initial value images of arrays (created in startup)
 	for _, f := range c.images {
 		f()
 	}
@@ -1299,14 +1299,14 @@ func (c *Compiler) genProc(in *Inst) {
 		return
 	}
 	if p.Ret != TVoid && !endsWithJump(p.Decl.Body) {
-		c.warn(p.Decl.EndPos, "procedura %s může skončit bez return; vrátí nedefinovanou hodnotu", p.Name)
+		c.warn(p.Decl.EndPos, "procedure %s may end without return; it returns an undefined value", p.Name)
 	}
 	if !endsWithJump(p.Decl.Body) {
 		g.imp("RTS")
 	}
 }
 
-// startup: CLD, inicializace globálních proměnných, vektory přerušení.
+// startup: CLD, initialization of global variables, interrupt vectors.
 func (c *Compiler) startup(handlers []*Inst, used map[*Var]bool) {
 	p := c.p
 	p.CurLine, p.CurFile = 0, ""
@@ -1327,7 +1327,7 @@ func (c *Compiler) startup(handlers []*Inst, used map[*Var]bool) {
 			continue
 		}
 		if v.Ring {
-			continue // data ring se nenulují, jen head a count
+			continue // ring data is not cleared, only head and count
 		}
 		if !v.Scalar() {
 			arrays = append(arrays, v)
@@ -1391,7 +1391,7 @@ func (c *Compiler) startup(handlers []*Inst, used map[*Var]bool) {
 			p.I("BNE", cpu.Rel, asm.S(loop, 0))
 		}
 	}
-	// shadow registry s počáteční hodnotou
+	// shadow registers with an initial value
 	for _, g := range c.globals {
 		if v, ok := g.(*Var); ok && v.Shadow != nil && v.ShadowInit && used[v.Shadow] {
 			p.I("LDA", asm.Auto, asm.S(v.Shadow.Label, 0))
@@ -1407,7 +1407,7 @@ func (c *Compiler) startup(handlers []*Inst, used map[*Var]bool) {
 			cli = true
 		}
 		if vec < 0 {
-			c.fail(h.Proc.Decl.Pos, "target %s nemá vektor pro %s", c.T.Name, h.Proc.Interrupt)
+			c.fail(h.Proc.Decl.Pos, "target %s has no vector for %s", c.T.Name, h.Proc.Interrupt)
 		}
 		lo, hi := asm.S(h.Label, 0), asm.S(h.Label, 0)
 		lo.Part, hi.Part = asm.Lo, asm.Hi
@@ -1421,7 +1421,7 @@ func (c *Compiler) startup(handlers []*Inst, used map[*Var]bool) {
 	}
 }
 
-// runtime přidá běhové rutiny násobení a dělení, pokud jsou potřeba.
+// runtime adds the multiplication and division routines when needed.
 func (c *Compiler) runtime() {
 	p := c.p
 	p.CurLine, p.CurFile = 0, ""
@@ -1453,7 +1453,7 @@ func (c *Compiler) runtime() {
 		p.Imp("RTS")
 	}
 	if c.needDiv {
-		p.Label("__div16") // rt0..1 / rt2..3 -> podíl A/X (rt0..1), zbytek rt4..5
+		p.Label("__div16") // rt0..1 / rt2..3 -> quotient A/X (rt0..1), remainder rt4..5
 		p.I("LDA", cpu.Imm, asm.N(0))
 		p.I("STA", asm.Auto, rt(4))
 		p.I("STA", asm.Auto, rt(5))

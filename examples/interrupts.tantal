@@ -1,0 +1,22 @@
+; RIOT timer interrupt: the handler counts ticks and stores the state of port A.
+; The samples buffer holds values read from port PAD, not tick numbers.
+; In the emulator, give the port input, e.g.:
+;   tantal run examples/interrupts.tantal --input PAD=@0:00,@3000:05,@6000:07
+; Without --input the port reads as zeros.
+ring byte[16] samples
+card ticks
+byte got, n
+
+interrupt irq proc onTimer()
+  ticks += 1
+  samples <- PAD
+  TIM64I = 16                ; next interrupt in 16 x 64 us
+endproc
+
+TIM64I = 16                  ; start the timer with interrupt
+while ticks < 10 do od       ; wait for 10 ticks
+
+atomic
+  n = len(samples)
+  got = pop(samples)
+endatomic

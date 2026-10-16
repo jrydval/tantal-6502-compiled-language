@@ -6,11 +6,11 @@ import (
 	"tantal/lang"
 )
 
-// timeoutPlan: jak nastavit časovač RIOT pro daný limit.
+// timeoutPlan: how to program the RIOT timer for a given timeout.
 type timeoutPlan struct {
-	off     int // posun zápisové adresy (dělitel 1, 8, 64, 1024)
-	first   int // počet tiků prvního odpočtu
-	reloads int // počet dalších odpočtů po 255 tiků (dělitel 1024)
+	off     int // offset of the write address (divider 1, 8, 64, 1024)
+	first   int // ticks of the first countdown
+	reloads int // number of further countdowns of 255 ticks (divider 1024)
 }
 
 func planTimeout(us int) timeoutPlan {
@@ -46,19 +46,19 @@ func (w *waitCtx) setup(x *lang.Wait) {
 	w.tmo = true
 	w.base = g.c.T.TimeoutTimer
 	if w.base < 0 {
-		g.fail(x.Pos, "target %s nemá časovač pro wait ... timeout", g.c.T.Name)
+		g.fail(x.Pos, "target %s has no timer for wait ... timeout", g.c.T.Name)
 	}
 	v, ok := g.c.constEval(x.Timeout)
 	if !ok || v <= 0 {
-		g.fail(x.Pos, "časový limit musí být kladná konstanta")
+		g.fail(x.Pos, "timeout must be a positive constant")
 	}
 	mult := map[string]int{"us": 1, "ms": 1000, "s": 1000000}[x.Unit]
 	clk := g.c.T.Clock
 	us := v * mult
 	if us > 60000000 {
-		g.fail(x.Pos, "časový limit může být nejvýš 60 s")
+		g.fail(x.Pos, "timeout can be at most 60 s")
 	}
-	// převod na cykly procesoru (časovač počítá takty)
+	// convert to CPU cycles (the timer counts clock ticks)
 	cycles := int(int64(us) * int64(clk) / 1000000)
 	w.plan = planTimeout(cycles)
 	w.tmoLbl = g.newLabel("tmo")
@@ -74,7 +74,7 @@ func (w *waitCtx) setup(x *lang.Wait) {
 	g.e("STA", cpu.Abs, asm.N(w.base+w.plan.off))
 }
 
-// check: kontrola časovače na konci průchodu čekací smyčkou.
+// check: timer test at the end of a wait loop pass.
 func (w *waitCtx) check(loop string) {
 	g := w.g
 	g.e("BIT", cpu.Abs, asm.N(w.base+3))
@@ -108,7 +108,7 @@ func (w *waitCtx) finish(read func(), done, end string) {
 	}
 }
 
-// genWait vygeneruje čekání; výsledek (bajt portu) je v A.
+// genWait generates a wait; the result (the port byte) is in A.
 func (g *gen) genWait(x *lang.Wait) {
 	w := &waitCtx{g: g}
 	done, end := g.newLabel("wdone"), g.newLabel("wend")
@@ -133,7 +133,7 @@ func (g *gen) genWait(x *lang.Wait) {
 		case *lang.Ident:
 			v, ok := g.lookup(t.Name).(*Var)
 			if !ok || !v.Scalar() || v.Type() != TByte {
-				g.fail(t.Pos, "wait change vyžaduje byte proměnnou nebo registr")
+				g.fail(t.Pos, "wait change needs a byte variable or register")
 			}
 			src = g.readOp(v, t.Pos)
 		case *lang.BitRef:
@@ -141,17 +141,17 @@ func (g *gen) genWait(x *lang.Wait) {
 			src = g.bitSrc(b, t.Pos)
 			mask = b.mask()
 		default:
-			g.fail(x.Pos, "wait change vyžaduje proměnnou, registr nebo bit")
+			g.fail(x.Pos, "wait change needs a variable, register or bit")
 		}
 		var ref asm.Operand
 		usedTemp := false
 		if x.From != "" {
 			if g.lookup(x.From) == nil {
-				g.fail(x.Pos, "neznámé jméno %q", x.From)
+				g.fail(x.Pos, "unknown name %q", x.From)
 			}
 			fv, ok := g.lookup(x.From).(*Var)
 			if !ok || !fv.Scalar() || fv.Type() != TByte || fv.ReadOnly {
-				g.fail(x.Pos, "from vyžaduje byte proměnnou")
+				g.fail(x.Pos, "from needs a byte variable")
 			}
 			ref = g.vop(fv)
 		} else {
@@ -193,7 +193,7 @@ func (g *gen) genWait(x *lang.Wait) {
 	case "rising", "falling":
 		b := g.bitOf(x.Target.(*lang.BitRef))
 		if b.Lo != b.Hi {
-			g.fail(x.Pos, "wait %s vyžaduje jeden bit", x.Kind)
+			g.fail(x.Pos, "wait %s needs a single bit", x.Kind)
 		}
 		src := g.bitSrc(b, x.Pos)
 		m := b.mask()
@@ -201,7 +201,7 @@ func (g *gen) genWait(x *lang.Wait) {
 		w.setup(x)
 		p1, p2 := g.newLabel("w1"), g.newLabel("w2")
 		usesX := false
-		// fáze 1: počkat na opačnou úroveň; testBranch skočí, když je bit nastaven/nulový
+		// phase 1: wait for the opposite level; test branches when the bit is set/clear
 		test := func(set bool, target string) {
 			switch m {
 			case 0x80:
@@ -218,13 +218,13 @@ func (g *gen) genWait(x *lang.Wait) {
 		}
 		g.label(p1)
 		if w.tmo {
-			test(!rising, p2) // opačná úroveň dosažena
+			test(!rising, p2) // opposite level reached
 			w.check(p1)
 		} else {
-			test(rising, p1) // dokud je stále výchozí úroveň
+			test(rising, p1) // while still at the starting level
 		}
 		g.label(p2)
-		// fáze 2: počkat na cílovou úroveň a vrátit celý bajt
+		// phase 2: wait for the target level and return the whole byte
 		if m == 0x80 {
 			g.mem("LDA", src)
 			if w.tmo {

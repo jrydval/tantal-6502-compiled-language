@@ -1,4 +1,4 @@
-// Package lang obsahuje lexer, AST a parser jazyka Tantal.
+// Package lang contains the lexer, AST and parser of the Tantal language.
 package lang
 
 import (
@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// TokKind je druh tokenu.
+// TokKind is a token kind.
 type TokKind int
 
 const (
@@ -21,7 +21,7 @@ const (
 	ILLEGAL
 )
 
-// Pos je místo ve zdrojáku.
+// Pos is a position in the source.
 type Pos struct {
 	File string
 	Line int
@@ -30,12 +30,12 @@ type Pos struct {
 
 func (p Pos) String() string { return fmt.Sprintf("%s:%d:%d", p.File, p.Line, p.Col) }
 
-// Token je jeden token.
+// Token is one token.
 type Token struct {
 	Kind  TokKind
 	Text  string
 	Num   int
-	ZTerm bool // řetězec s příponou z
+	ZTerm bool // string with the z suffix
 	Pos   Pos
 }
 
@@ -49,7 +49,7 @@ var keywords = map[string]bool{
 	"noinit": true, "readonly": true, "writeonly": true, "shadow": true, "irqsafe": true,
 }
 
-// Lex rozloží zdroják na tokeny.
+// Lex splits the source into tokens.
 func Lex(file, src string) ([]Token, error) {
 	var toks []Token
 	line, col := 1, 1
@@ -84,7 +84,7 @@ func Lex(file, src string) ([]Token, error) {
 			}
 			continue
 		case c == '\\':
-			// pokračování řádku: zahodí konec řádku
+			// line continuation: drops the end of line
 			p := pos()
 			adv(1)
 			for i < len(src) && (src[i] == ' ' || src[i] == '\t' || src[i] == '\r') {
@@ -99,7 +99,7 @@ func Lex(file, src string) ([]Token, error) {
 				adv(1)
 				continue
 			}
-			return nil, fmt.Errorf("%s: za \\ smí být jen konec řádku", p)
+			return nil, fmt.Errorf("%s: only an end of line may follow \\", p)
 		}
 		p := pos()
 		start := i
@@ -136,7 +136,7 @@ func Lex(file, src string) ([]Token, error) {
 					toks = append(toks, Token{Kind: ILLEGAL, Text: txt, Pos: p})
 					continue
 				}
-				return nil, fmt.Errorf("%s: chybné číslo %q", p, txt)
+				return nil, fmt.Errorf("%s: invalid number %q", p, txt)
 			}
 			toks = append(toks, Token{Kind: NUMBER, Text: txt, Num: v, Pos: p})
 		case c == '\'':
@@ -155,7 +155,7 @@ func Lex(file, src string) ([]Token, error) {
 				adv(1)
 			}
 			if i >= len(src) || src[i] != '"' {
-				return nil, fmt.Errorf("%s: neukončený řetězec", p)
+				return nil, fmt.Errorf("%s: unterminated string", p)
 			}
 			adv(1)
 			t := Token{Kind: STRING, Text: sb.String(), Pos: p}

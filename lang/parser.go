@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Error je chyba s pozicí.
+// Error is an error with a position.
 type Error struct {
 	Pos Pos
 	Msg string
@@ -13,7 +13,7 @@ type Error struct {
 
 func (e *Error) Error() string { return fmt.Sprintf("%s: %s", e.Pos, e.Msg) }
 
-// Parser je rekurzivní sestupný parser.
+// Parser is a recursive descent parser.
 type Parser struct {
 	toks     []Token
 	i        int
@@ -21,7 +21,7 @@ type Parser struct {
 	Warnings []string
 }
 
-// Parse rozebere soubor na seznam příkazů a deklarací.
+// Parse parses a file into a list of statements and declarations.
 func Parse(file, src string) ([]Stmt, []string, error) {
 	toks, err := Lex(file, src)
 	if err != nil {
@@ -32,7 +32,7 @@ func Parse(file, src string) ([]Stmt, []string, error) {
 	err = p.catch(func() {
 		out = p.block(nil)
 		if p.tok().Kind != EOF {
-			p.fail(p.tok().Pos, "neočekávané %q", p.tok().Text)
+			p.fail(p.tok().Pos, "unexpected %q", p.tok().Text)
 		}
 	})
 	return out, p.Warnings, err
@@ -59,7 +59,7 @@ func (p *Parser) fail(pos Pos, f string, a ...any) {
 }
 
 func (p *Parser) warn(pos Pos, f string, a ...any) {
-	p.Warnings = append(p.Warnings, fmt.Sprintf("%s: varování: %s", pos, fmt.Sprintf(f, a...)))
+	p.Warnings = append(p.Warnings, fmt.Sprintf("%s: warning: %s", pos, fmt.Sprintf(f, a...)))
 }
 
 func (p *Parser) tok() Token  { return p.toks[p.i] }
@@ -81,14 +81,14 @@ func (p *Parser) isKw(s string) bool { return p.is(KEYWORD, s) }
 
 func (p *Parser) expectOp(s string) Token {
 	if !p.isOp(s) {
-		p.fail(p.tok().Pos, "očekáváno %q, nalezeno %q", s, p.desc())
+		p.fail(p.tok().Pos, "expected %q, found %q", s, p.desc())
 	}
 	return p.next()
 }
 
 func (p *Parser) expectKw(s string) Token {
 	if !p.isKw(s) {
-		p.fail(p.tok().Pos, "očekáváno %q, nalezeno %q", s, p.desc())
+		p.fail(p.tok().Pos, "expected %q, found %q", s, p.desc())
 	}
 	return p.next()
 }
@@ -97,16 +97,16 @@ func (p *Parser) desc() string {
 	t := p.tok()
 	switch t.Kind {
 	case NEWLINE:
-		return "konec řádku"
+		return "end of line"
 	case EOF:
-		return "konec souboru"
+		return "end of file"
 	}
 	return t.Text
 }
 
 func (p *Parser) ident() Token {
 	if p.tok().Kind != IDENT {
-		p.fail(p.tok().Pos, "očekáváno jméno, nalezeno %q", p.desc())
+		p.fail(p.tok().Pos, "expected a name, found %q", p.desc())
 	}
 	return p.next()
 }
@@ -124,10 +124,10 @@ func (p *Parser) endOfStmt() {
 	if t.Kind == NEWLINE || t.Kind == EOF || (t.Kind == KEYWORD && terminators[t.Text]) {
 		return
 	}
-	p.fail(t.Pos, "neočekávané %q za příkazem", p.desc())
+	p.fail(t.Pos, "unexpected %q after statement", p.desc())
 }
 
-// block čte příkazy, dokud nenarazí na klíčové slovo z ends (nebo EOF při ends == nil).
+// block reads statements until it reaches a keyword from ends (or EOF when ends == nil).
 func (p *Parser) block(ends map[string]bool) []Stmt {
 	var out []Stmt
 	for {
@@ -141,7 +141,7 @@ func (p *Parser) block(ends map[string]bool) []Stmt {
 						names = append(names, k)
 					}
 				}
-				p.fail(t.Pos, "neočekávaný konec souboru, chybí %s", strings.Join(names, " nebo "))
+				p.fail(t.Pos, "unexpected end of file, missing %s", strings.Join(names, " or "))
 			}
 			return out
 		}
@@ -149,7 +149,7 @@ func (p *Parser) block(ends map[string]bool) []Stmt {
 			if ends != nil && ends[t.Text] {
 				return out
 			}
-			p.fail(t.Pos, "neočekávané %q", t.Text)
+			p.fail(t.Pos, "unexpected %q", t.Text)
 		}
 		out = append(out, p.stmt()...)
 		p.endOfStmt()
@@ -222,7 +222,7 @@ func (p *Parser) stmt() []Stmt {
 			return []Stmt{&Atomic{Pos: t.Pos, Body: body}}
 		}
 	}
-	p.fail(t.Pos, "neočekávané %q", p.desc())
+	p.fail(t.Pos, "unexpected %q", p.desc())
 	return nil
 }
 
@@ -235,7 +235,7 @@ func (p *Parser) directive() Stmt {
 	case "zp":
 		w := p.ident()
 		if w.Text != "exclude" {
-			p.fail(w.Pos, "očekáváno .zp exclude")
+			p.fail(w.Pos, "expected .zp exclude")
 		}
 		d.Text = "exclude"
 		lo := p.unary()
@@ -248,7 +248,7 @@ func (p *Parser) directive() Stmt {
 	case "include":
 		s := p.next()
 		if s.Kind != STRING {
-			p.fail(s.Pos, "očekáván název souboru v uvozovkách")
+			p.fail(s.Pos, "expected a file name in quotes")
 		}
 		d.Text = s.Text
 	case "target", "cpu":
@@ -260,12 +260,12 @@ func (p *Parser) directive() Stmt {
 			d.Args = []Expr{p.expr()}
 		}
 	default:
-		p.fail(t.Pos, "neznámá direktiva .%s", t.Text)
+		p.fail(t.Pos, "unknown directive .%s", t.Text)
 	}
 	return d
 }
 
-// typeSpec čte byte/card [pointer] [ '[' len ']' ], string [ '[' len ']' ], ring byte[N].
+// typeSpec reads byte/card [pointer] [ '[' len ']' ], string [ '[' len ']' ], ring byte[N].
 func (p *Parser) typeSpec() TypeSpec {
 	var ts TypeSpec
 	if p.isKw("ring") {
@@ -280,7 +280,7 @@ func (p *Parser) typeSpec() TypeSpec {
 		ts.Base = "byte"
 		ts.String = true
 	default:
-		p.fail(t.Pos, "očekáván typ")
+		p.fail(t.Pos, "expected a type")
 	}
 	if p.isKw("pointer") {
 		p.next()
@@ -298,7 +298,7 @@ func (p *Parser) typeSpec() TypeSpec {
 		ts.Array = true
 	}
 	if ts.Ring && (!ts.Array || ts.LenExpr == nil) {
-		p.fail(t.Pos, "ring vyžaduje velikost, např. ring byte[256] log")
+		p.fail(t.Pos, "ring needs a size, e.g. ring byte[256] log")
 	}
 	return ts
 }
@@ -376,13 +376,13 @@ func (p *Parser) bitDecl() Stmt {
 	d := &BitDecl{Pos: name.Pos, Name: name.Text}
 	if !p.isOp("=") {
 		if kw.Text == "bits" {
-			p.fail(name.Pos, "bits vyžaduje registr, např. bits MODE = PAD.4..6")
+			p.fail(name.Pos, "bits needs a register, e.g. bits MODE = PAD.4..6")
 		}
 		return d
 	}
 	p.next()
 	if p.tok().Kind == NUMBER {
-		// bit READY = 1 : příznak v RAM s počáteční hodnotou
+		// bit READY = 1 : flag in RAM with an initial value
 		d.Init = p.expr()
 		return d
 	}
@@ -390,19 +390,19 @@ func (p *Parser) bitDecl() Stmt {
 	p.expectOp(".")
 	lo := p.next()
 	if lo.Kind != NUMBER || lo.Num > 7 {
-		p.fail(lo.Pos, "očekáváno číslo bitu 0–7")
+		p.fail(lo.Pos, "expected a bit number 0-7")
 	}
 	d.Reg, d.Lo, d.Hi = reg.Text, lo.Num, lo.Num
 	if p.isOp("..") {
 		p.next()
 		hi := p.next()
 		if hi.Kind != NUMBER || hi.Num > 7 || hi.Num < lo.Num {
-			p.fail(hi.Pos, "chybný rozsah bitů")
+			p.fail(hi.Pos, "invalid bit range")
 		}
 		d.Hi = hi.Num
 	}
 	if kw.Text == "bit" && d.Hi != d.Lo {
-		p.fail(name.Pos, "pro rozsah bitů použijte bits")
+		p.fail(name.Pos, "use bits for a bit range")
 	}
 	return d
 }
@@ -416,7 +416,7 @@ func (p *Parser) procDecl() Stmt {
 		p.next()
 		k := p.ident()
 		if k.Text != "irq" && k.Text != "nmi" {
-			p.fail(k.Pos, "očekáváno irq nebo nmi")
+			p.fail(k.Pos, "expected irq or nmi")
 		}
 		d.Interrupt = k.Text
 	case p.isKw("extern"):
@@ -449,7 +449,7 @@ func (p *Parser) procDecl() Stmt {
 		p.next()
 		rt := p.next()
 		if rt.Text != "byte" && rt.Text != "card" {
-			p.fail(rt.Pos, "návratový typ musí být byte nebo card")
+			p.fail(rt.Pos, "return type must be byte or card")
 		}
 		d.Ret = rt.Text
 		if p.isOp("@") && p.peek().Kind == IDENT && len(p.peek().Text) == 1 {
@@ -501,7 +501,7 @@ func (p *Parser) forStmt() Stmt {
 		p.next()
 		s.Exclusive = true
 	default:
-		p.fail(p.tok().Pos, "očekáváno to nebo until")
+		p.fail(p.tok().Pos, "expected to or until")
 	}
 	s.To = p.expr()
 	if p.isKw("step") {
@@ -520,17 +520,17 @@ func (p *Parser) asmBlock() Stmt {
 	end := -1
 	for ln := start; ln < len(p.lines); ln++ {
 		if strings.TrimSpace(strings.SplitN(p.lines[ln], ";", 2)[0]) == "endasm" {
-			end = ln + 1 // 1-based číslo řádku s endasm
+			end = ln + 1 // 1-based number of the endasm line
 			break
 		}
 	}
 	if end < 0 {
-		p.fail(t.Pos, "chybí endasm")
+		p.fail(t.Pos, "missing endasm")
 	}
 	a := &Asm{Pos: t.Pos, First: start + 1, Lines: p.lines[start : end-1]}
 	for !(p.isKw("endasm") && p.tok().Pos.Line == end) {
 		if p.tok().Kind == EOF {
-			p.fail(t.Pos, "chybí endasm")
+			p.fail(t.Pos, "missing endasm")
 		}
 		p.next()
 	}
@@ -541,7 +541,7 @@ func (p *Parser) asmBlock() Stmt {
 func (p *Parser) simpleStmt() Stmt {
 	start := p.tok()
 	if (start.Text == "int" || start.Text == "sbyte") && p.peek().Kind == IDENT {
-		p.fail(start.Pos, "typ %s zatím není podporován; verze 0.1 má byte a card", start.Text)
+		p.fail(start.Pos, "type %s is not supported yet; version 0.1 has byte and card", start.Text)
 	}
 	lv := p.postfix()
 	t := p.tok()
@@ -553,7 +553,7 @@ func (p *Parser) simpleStmt() Stmt {
 		case "<-":
 			id, ok := lv.(*Ident)
 			if !ok {
-				p.fail(t.Pos, "<- vyžaduje jméno kruhového bufferu")
+				p.fail(t.Pos, "<- needs the name of a ring buffer")
 			}
 			p.next()
 			return &Push{Pos: start.Pos, Ring: id.Name, Value: p.expr()}
@@ -562,11 +562,11 @@ func (p *Parser) simpleStmt() Stmt {
 	if c, ok := lv.(*Call); ok {
 		return &ExprStmt{Pos: start.Pos, X: c}
 	}
-	p.fail(t.Pos, "očekáváno přiřazení nebo volání")
+	p.fail(t.Pos, "expected an assignment or a call")
 	return nil
 }
 
-// ---- výrazy ----
+// ---- expressions ----
 
 func (p *Parser) expr() Expr { return p.orExpr() }
 
@@ -600,9 +600,9 @@ func (p *Parser) cmpExpr() Expr {
 			p.next()
 			l = &Binary{Pos: t.Pos, Op: t.Text, L: l, R: p.bitOr()}
 		case "<-":
-			// ve výrazu se <- čte jako < a unární minus
+			// inside an expression <- reads as < and unary minus
 			p.next()
-			p.warn(t.Pos, "„<-“ ve výrazu se čte jako „< -“; doplňte mezeru")
+			p.warn(t.Pos, "\"<-\" in an expression reads as \"< -\"; add a space")
 			r := p.bitOr()
 			l = &Binary{Pos: t.Pos, Op: "<", L: l, R: &Unary{Pos: t.Pos, Op: "-", X: r}}
 		default:
@@ -723,14 +723,14 @@ func (p *Parser) postfix() Expr {
 			p.next()
 			lo := p.next()
 			if lo.Num > 7 {
-				p.fail(lo.Pos, "číslo bitu musí být 0–7")
+				p.fail(lo.Pos, "bit number must be 0-7")
 			}
 			b := &BitRef{Pos: t.Pos, Base: t.Text, Lo: lo.Num, Hi: lo.Num}
 			if p.isOp("..") {
 				p.next()
 				hi := p.next()
 				if hi.Kind != NUMBER || hi.Num > 7 || hi.Num < lo.Num {
-					p.fail(hi.Pos, "chybný rozsah bitů")
+					p.fail(hi.Pos, "invalid bit range")
 				}
 				b.Hi = hi.Num
 			}
@@ -738,7 +738,7 @@ func (p *Parser) postfix() Expr {
 		}
 		return &Ident{Pos: t.Pos, Name: t.Text}
 	}
-	p.fail(t.Pos, "očekáván výraz, nalezeno %q", p.desc())
+	p.fail(t.Pos, "expected an expression, found %q", p.desc())
 	return nil
 }
 
@@ -759,7 +759,7 @@ func (p *Parser) waitExpr() Expr {
 			w.Kind = p.next().Text
 			w.Target = p.postfix()
 			if _, ok := w.Target.(*BitRef); !ok {
-				p.fail(t.Pos, "wait %s vyžaduje bit, např. PAD.7", w.Kind)
+				p.fail(t.Pos, "wait %s needs a bit, e.g. PAD.7", w.Kind)
 			}
 		}
 	}
@@ -775,7 +775,7 @@ func (p *Parser) waitExpr() Expr {
 		case "us", "ms", "s":
 			w.Unit = u.Text
 		default:
-			p.fail(u.Pos, "jednotka limitu musí být us, ms nebo s")
+			p.fail(u.Pos, "timeout unit must be us, ms or s")
 		}
 	}
 	return w

@@ -13,10 +13,10 @@ import (
 //go:embed targets/*
 var targetFS embed.FS
 
-// Range je uzavřený rozsah adres.
+// Range is a closed address range.
 type Range struct{ Lo, Hi int }
 
-// Target popisuje cílový stroj.
+// Target describes the target machine.
 type Target struct {
 	Name         string
 	CPU          string
@@ -32,12 +32,12 @@ type Target struct {
 	TimeoutTimer int
 	ROM          Range
 	IO           Range
-	Include      string // jméno souboru
+	Include      string // file name
 	IncludeSrc   string
 	Dir          string
 }
 
-// LoadTarget načte vestavěný target (např. "pal2") nebo soubor .target.
+// LoadTarget loads a built-in target (e.g. "pal2") or a .target file.
 func LoadTarget(name string) (*Target, error) {
 	var data []byte
 	var err error
@@ -51,7 +51,7 @@ func LoadTarget(name string) (*Target, error) {
 		builtin = true
 	}
 	if err != nil {
-		return nil, fmt.Errorf("target %q nenalezen", name)
+		return nil, fmt.Errorf("target %q not found", name)
 	}
 	t := &Target{Name: strings.TrimSuffix(filepath.Base(name), ".target"), CPU: "6502", Clock: 1000000, Org: 0x2000,
 		ZPFree: Range{0, 0xFF}, Exit: -1, Brk: -1, VectorIRQ: -1, VectorNMI: -1, TimeoutTimer: -1, ROM: Range{-1, -1}, IO: Range{-1, -1}, Dir: dir}
@@ -65,13 +65,13 @@ func LoadTarget(name string) (*Target, error) {
 		}
 		kv := strings.SplitN(line, "=", 2)
 		if len(kv) != 2 {
-			return nil, fmt.Errorf("%s.target:%d: očekáváno klíč = hodnota", t.Name, n+1)
+			return nil, fmt.Errorf("%s.target:%d: expected key = value", t.Name, n+1)
 		}
 		k, v := strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1])
 		num := func(s string) int {
 			x, ok := asm.ParseNumber(strings.TrimSpace(s))
 			if !ok {
-				err = fmt.Errorf("%s.target:%d: chybné číslo %q", t.Name, n+1, s)
+				err = fmt.Errorf("%s.target:%d: invalid number %q", t.Name, n+1, s)
 			}
 			return x
 		}
@@ -95,7 +95,7 @@ func LoadTarget(name string) (*Target, error) {
 		case "org":
 			t.Org = num(v)
 		case "vars":
-			// v0.1: proměnné vždy za kódem
+			// v0.1: variables always go after the code
 		case "reserve":
 			t.Reserve = append(t.Reserve, rng(v))
 		case "zp.free":
@@ -117,7 +117,7 @@ func LoadTarget(name string) (*Target, error) {
 		case "include":
 			t.Include = v
 		default:
-			return nil, fmt.Errorf("%s.target:%d: neznámý klíč %q", t.Name, n+1, k)
+			return nil, fmt.Errorf("%s.target:%d: unknown key %q", t.Name, n+1, k)
 		}
 		if err != nil {
 			return nil, err
@@ -131,7 +131,7 @@ func LoadTarget(name string) (*Target, error) {
 			src, err = os.ReadFile(filepath.Join(dir, t.Include))
 		}
 		if err != nil {
-			return nil, fmt.Errorf("soubor %s z targetu nenalezen", t.Include)
+			return nil, fmt.Errorf("file %s referenced by the target not found", t.Include)
 		}
 		t.IncludeSrc = string(src)
 	}

@@ -1,66 +1,66 @@
 package lang
 
-// Expr je výraz.
+// Expr is an expression.
 type Expr interface{ P() Pos }
 
-// Stmt je příkaz nebo deklarace.
+// Stmt is a statement or declaration.
 type Stmt interface{ P() Pos }
 
 type (
-	// Num je číselná konstanta.
+	// Num is a numeric constant.
 	Num struct {
 		Pos Pos
 		V   int
 	}
-	// Str je řetězcový literál.
+	// Str is a string literal.
 	Str struct {
 		Pos   Pos
 		S     string
 		ZTerm bool
 	}
-	// Ident je jméno.
+	// Ident is a name.
 	Ident struct {
 		Pos  Pos
 		Name string
 	}
-	// Index je a[i].
+	// Index is a[i].
 	Index struct {
 		Pos  Pos
 		Base string
 		Idx  Expr
 	}
-	// BitRef je X.n nebo X.a..b.
+	// BitRef is X.n or X.a..b.
 	BitRef struct {
 		Pos    Pos
 		Base   string
 		Lo, Hi int
 	}
-	// Unary je unární operátor: - ~ not @.
+	// Unary is a unary operator: - ~ not @.
 	Unary struct {
 		Pos Pos
 		Op  string
 		X   Expr
 	}
-	// Binary je binární operátor.
+	// Binary is a binary operator.
 	Binary struct {
 		Pos  Pos
 		Op   string
 		L, R Expr
 	}
-	// Call je volání procedury nebo zabudované funkce.
+	// Call is a call of a procedure or built-in function.
 	Call struct {
 		Pos  Pos
 		Name string
 		Args []Expr
 	}
-	// Wait je výraz wait.
+	// Wait is a wait expression.
 	Wait struct {
 		Pos     Pos
 		Kind    string // "cond", "change", "rising", "falling"
-		Cond    Expr   // pro "cond"
-		Target  Expr   // Ident nebo BitRef
-		From    string // proměnná pro change ... from
-		Timeout Expr   // hodnota limitu, nil = bez limitu
+		Cond    Expr   // for "cond"
+		Target  Expr   // Ident or BitRef
+		From    string // variable for change ... from
+		Timeout Expr   // timeout value, nil = no timeout
 		Unit    string // us, ms, s
 	}
 )
@@ -75,24 +75,24 @@ func (e *Binary) P() Pos { return e.Pos }
 func (e *Call) P() Pos   { return e.Pos }
 func (e *Wait) P() Pos   { return e.Pos }
 
-// TypeSpec popisuje typ v deklaraci.
+// TypeSpec describes a type in a declaration.
 type TypeSpec struct {
 	Base    string // "byte", "card"
 	Pointer bool
 	String  bool
 	Ring    bool
 	Array   bool
-	LenExpr Expr // nil = odvodit z inicializace
+	LenExpr Expr // nil = derive from the initializer
 }
 
 type (
-	// VarDecl je deklarace proměnné.
+	// VarDecl is a variable declaration.
 	VarDecl struct {
 		Pos       Pos
 		Name      string
 		Type      TypeSpec
 		Const     bool
-		Addr      Expr // @ adresa
+		Addr      Expr // @ address
 		Init      []Expr
 		File      string // file "x.bin"
 		ReadOnly  bool
@@ -100,27 +100,27 @@ type (
 		Shadow    bool
 		NoInit    bool
 	}
-	// ConstDecl je const JMÉNO = výraz.
+	// ConstDecl is const NAME = expr.
 	ConstDecl struct {
 		Pos  Pos
 		Name string
 		X    Expr
 	}
-	// BitDecl je bit/bits alias, případně bitový příznak v RAM.
+	// BitDecl is a bit/bits alias, or a bit flag in RAM.
 	BitDecl struct {
 		Pos    Pos
 		Name   string
-		Reg    string // "" = příznak v RAM
+		Reg    string // "" = flag in RAM
 		Lo, Hi int
 		Init   Expr
 	}
-	// Param je parametr procedury.
+	// Param is a procedure parameter.
 	Param struct {
 		Name string
 		Type TypeSpec
-		Reg  string // A/X/Y u extern
+		Reg  string // A/X/Y for extern
 	}
-	// ProcDecl je procedura.
+	// ProcDecl is a procedure.
 	ProcDecl struct {
 		Pos       Pos
 		Name      string
@@ -133,46 +133,46 @@ type (
 		IrqSafe   bool
 		EndPos    Pos
 	}
-	// Directive je .org a podobné.
+	// Directive is .org and similar.
 	Directive struct {
 		Pos  Pos
 		Name string
 		Args []Expr
 		Text string
 	}
-	// Assign je přiřazení (Op "=", "+=", ...).
+	// Assign is an assignment (Op "=", "+=", ...).
 	Assign struct {
 		Pos    Pos
 		Target Expr
 		Op     string
 		Value  Expr
 	}
-	// Push je buf <- x.
+	// Push is buf <- x.
 	Push struct {
 		Pos   Pos
 		Ring  string
 		Value Expr
 	}
-	// If je podmínka.
+	// If is a conditional.
 	If struct {
 		Pos    Pos
 		Conds  []Expr
 		Blocks [][]Stmt
 		Else   []Stmt
 	}
-	// Loop je do ... od, případně s until na konci.
+	// Loop is do ... od, optionally with until at the end.
 	Loop struct {
 		Pos   Pos
 		Body  []Stmt
 		Until Expr
 	}
-	// While je while c do ... od.
+	// While is while c do ... od.
 	While struct {
 		Pos  Pos
 		Cond Expr
 		Body []Stmt
 	}
-	// For je smyčka for.
+	// For is a for loop.
 	For struct {
 		Pos       Pos
 		Var       string
@@ -181,25 +181,25 @@ type (
 		Step      Expr
 		Body      []Stmt
 	}
-	// Exit vyskočí ze smyčky.
+	// Exit leaves a loop.
 	Exit struct{ Pos Pos }
-	// Return vrací z procedury.
+	// Return returns from a procedure.
 	Return struct {
 		Pos Pos
 		X   Expr
 	}
-	// ExprStmt je výraz jako příkaz (volání, wait).
+	// ExprStmt is an expression used as a statement (call, wait).
 	ExprStmt struct {
 		Pos Pos
 		X   Expr
 	}
-	// Asm je blok inline assembleru.
+	// Asm is an inline assembler block.
 	Asm struct {
 		Pos   Pos
 		Lines []string
-		First int // číslo prvního řádku
+		First int // number of the first line
 	}
-	// Atomic je blok se zakázaným přerušením.
+	// Atomic is a block with interrupts disabled.
 	Atomic struct {
 		Pos  Pos
 		Body []Stmt

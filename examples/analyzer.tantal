@@ -1,0 +1,37 @@
+; A simple logic analyzer for the PAL-2
+; Records changes on port A into a ring buffer, shows the number of changes
+; on the display and after 2 s without a change prints the record to the TTY.
+; In the emulator, give the port input, e.g.:
+;   tantal run examples/analyzer.tantal --max 5000000 \
+;     --input PAD=@0:00,@500:01,@800:03,@1500:00,@1600:80
+
+ring byte[256] log noinit    ; survives a return to the monitor
+byte PAD_OLD                 ; last recorded port state
+card changes
+byte cur, i
+
+proc show()
+  DISP2 = hi(changes)
+  DISP1 = lo(changes)
+  DISP0 = cur
+  SCANDS()
+endproc
+
+PADD = $00                   ; port A as input
+PAD_OLD = PAD
+clear(log)
+
+.cycles <= 40
+do
+  cur = wait change PAD from PAD_OLD timeout 2 s
+  if timedout then exit fi
+  log <- cur
+  changes += 1
+od
+
+show()
+for i = 0 until len(log) do
+  PRTBYT(log[i])
+  OUTSP()
+od
+CRLF()

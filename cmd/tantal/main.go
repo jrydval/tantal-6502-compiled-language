@@ -1,4 +1,4 @@
-// Příkaz tantal: kompilátor jazyka Tantal pro 6502.
+// Command tantal: compiler for the Tantal language for the 6502.
 package main
 
 import (
@@ -12,20 +12,20 @@ import (
 	"tantal/emu"
 )
 
-const usage = `Tantal %s – kompilátor jazyka Tantal pro 6502
+const usage = `Tantal %s - compiler for the Tantal language for the 6502
 
-Použití:
-  tantal build [volby] program.tantal    přeloží program
-  tantal run   [volby] program.tantal    přeloží a spustí v emulátoru
+Usage:
+  tantal build [options] program.tantal    compile the program
+  tantal run   [options] program.tantal    compile and run it in the emulator
   tantal version
 
-Volby:
-  -t, --target JMÉNO     target (výchozí pal2) nebo soubor .target
-  -o, --out ZÁKLAD       základ jmen výstupních souborů (výchozí podle zdrojáku)
-  --input JMÉNO=h1,h2    (run) hodnoty pro postupná čtení registru nebo rutiny ROM, hexa;
-                         časovaně: JMÉNO=@cyklus:hodnota,@cyklus:hodnota
-  --max N                (run) limit cyklů (výchozí 1000000)
-  --trace                (run) vypíše provedené instrukce do ZÁKLAD.trace
+Options:
+  -t, --target NAME      target (default pal2) or a .target file
+  -o, --out BASE         base name of the output files (default: from the source)
+  --input NAME=h1,h2     (run) values for successive reads of a register or ROM routine, hex;
+                         timed: NAME=@cycle:value,@cycle:value
+  --max N                (run) cycle limit (default 1000000)
+  --trace                (run) write executed instructions to BASE.trace
 `
 
 func main() {
@@ -45,7 +45,7 @@ func main() {
 		a := args[i]
 		val := func() string {
 			if i+1 >= len(args) {
-				fail(fmt.Errorf("volba %s potřebuje hodnotu", a))
+				fail(fmt.Errorf("option %s needs a value", a))
 			}
 			i++
 			return args[i]
@@ -67,7 +67,7 @@ func main() {
 			trace = true
 		default:
 			if strings.HasPrefix(a, "-") {
-				fail(fmt.Errorf("neznámá volba %s", a))
+				fail(fmt.Errorf("unknown option %s", a))
 			}
 			files = append(files, a)
 		}
@@ -78,13 +78,13 @@ func main() {
 		return
 	case "build", "run":
 	case "upload":
-		fail(fmt.Errorf("upload zatím není hotový; soubor .pap z příkazu build pošlete do monitoru příkazem L přes terminál (2400 bps 8N2)"))
+		fail(fmt.Errorf("upload is not implemented yet; send the .pap file from build to the monitor with the L command via a terminal (2400 bps 8N2)"))
 	default:
 		fmt.Fprintf(os.Stderr, usage, compiler.Version)
 		os.Exit(2)
 	}
 	if len(files) != 1 {
-		fail(fmt.Errorf("zadejte právě jeden zdrojový soubor"))
+		fail(fmt.Errorf("give exactly one source file"))
 	}
 	src := files[0]
 	res, err := compiler.CompileFile(src, target)
@@ -107,8 +107,8 @@ func main() {
 				fail(err)
 			}
 		}
-		fmt.Printf("%s: $%04X–$%04X, kód a data %d B, proměnné do $%04X\n", src, res.Org, res.Asm.End-1, len(res.Bin), res.VarTop-1)
-		fmt.Printf("výstup: %s.{bin,hex,pap,lst,map,sym}\n", out)
+		fmt.Printf("%s: $%04X-$%04X, code and data %d B, variables up to $%04X\n", src, res.Org, res.Asm.End-1, len(res.Bin), res.VarTop-1)
+		fmt.Printf("output: %s.{bin,hex,pap,lst,map,sym}\n", out)
 		return
 	}
 	m := emu.New(res)
@@ -124,11 +124,11 @@ func main() {
 		if err := os.WriteFile(out+".trace", []byte(strings.Join(m.TraceOut, "\n")+"\n"), 0o644); err != nil {
 			fail(err)
 		}
-		fmt.Printf("\nstopa: %s.trace\n", out)
+		fmt.Printf("\ntrace: %s.trace\n", out)
 	}
 }
 
 func fail(err error) {
-	fmt.Fprintln(os.Stderr, "chyba:", err)
+	fmt.Fprintln(os.Stderr, "error:", err)
 	os.Exit(1)
 }

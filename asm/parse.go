@@ -8,19 +8,19 @@ import (
 	"tantal/cpu"
 )
 
-// Line je rozebraný řádek inline assembleru.
+// Line is a parsed line of inline assembler.
 type Line struct {
 	Label string
 	Mnem  string
 	Mode  cpu.Mode
 	Arg   Operand
-	Data  []Operand // pro .byte
+	Data  []Operand // for .byte
 }
 
-// Resolver převádí jméno v assembleru na operand (proměnná Tantalu, lokální návěští...).
+// Resolver maps a name used in assembler to an operand (Tantal variable, local label...).
 type Resolver func(name string) (Operand, bool)
 
-// ParseLine rozebere jeden řádek ve tvaru [návěští:] [MNEM operand] [; komentář].
+// ParseLine parses one line of the form [label:] [MNEM operand] [; comment].
 func ParseLine(text string, res Resolver) (*Line, error) {
 	if i := strings.IndexByte(text, ';'); i >= 0 {
 		text = text[:i]
@@ -55,7 +55,7 @@ func ParseLine(text string, res Resolver) (*Line, error) {
 		return l, nil
 	}
 	if _, ok := cpu.Lookup[mn]; !ok {
-		return nil, fmt.Errorf("neznámá instrukce %q", fields[0])
+		return nil, fmt.Errorf("unknown instruction %q", fields[0])
 	}
 	l.Mnem = mn
 	compact := strings.ReplaceAll(arg, " ", "")
@@ -113,11 +113,11 @@ func isIdent(s string) bool {
 	return true
 }
 
-// parseExpr: [<|>] člen {(+|-) člen}; nejvýš jeden symbol.
+// parseExpr: [<|>] term {(+|-) term}; at most one symbol.
 func parseExpr(s string, res Resolver) (Operand, error) {
 	var o Operand
 	if s == "" {
-		return o, fmt.Errorf("chybí operand")
+		return o, fmt.Errorf("missing operand")
 	}
 	switch s[0] {
 	case '<':
@@ -139,20 +139,20 @@ func parseExpr(s string, res Resolver) (Operand, error) {
 		}
 		term := s[:j]
 		if term == "" {
-			return o, fmt.Errorf("chybný výraz")
+			return o, fmt.Errorf("invalid expression")
 		}
 		if v, ok := ParseNumber(term); ok {
 			o.Off += sign * v
 		} else if isIdent(term) {
 			if o.Sym != "" {
-				return o, fmt.Errorf("výraz smí obsahovat jen jeden symbol")
+				return o, fmt.Errorf("an expression may contain only one symbol")
 			}
 			r, ok := res(term)
 			if !ok {
-				return o, fmt.Errorf("neznámý symbol %q", term)
+				return o, fmt.Errorf("unknown symbol %q", term)
 			}
 			if sign < 0 && r.Sym != "" {
-				return o, fmt.Errorf("symbol nelze odečítat")
+				return o, fmt.Errorf("a symbol cannot be subtracted")
 			}
 			if r.Sym != "" {
 				o.Sym = r.Sym
@@ -161,7 +161,7 @@ func parseExpr(s string, res Resolver) (Operand, error) {
 				o.Off += sign * r.Off
 			}
 		} else {
-			return o, fmt.Errorf("chybný člen výrazu %q", term)
+			return o, fmt.Errorf("invalid expression term %q", term)
 		}
 		s = s[j:]
 		if len(s) > 0 {
@@ -176,7 +176,7 @@ func parseExpr(s string, res Resolver) (Operand, error) {
 	return o, nil
 }
 
-// ParseNumber čte $hex, %bin, desítkové číslo a 'c'.
+// ParseNumber reads $hex, %bin, decimal and 'c'.
 func ParseNumber(s string) (int, bool) {
 	s = strings.ReplaceAll(s, "_", "")
 	if s == "" {

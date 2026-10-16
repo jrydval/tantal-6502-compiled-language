@@ -1,12 +1,12 @@
-// Package cpu obsahuje tabulku instrukcí NMOS 6502 a emulátor.
+// Package cpu contains the NMOS 6502 instruction table and an emulator.
 package cpu
 
-// Mode je adresní režim instrukce.
+// Mode is an instruction addressing mode.
 type Mode int
 
 const (
-	Imp  Mode = iota // implicitní
-	Acc              // akumulátor (ASL A)
+	Imp  Mode = iota // implied
+	Acc              // accumulator (ASL A)
 	Imm              // #$nn
 	ZP               // $nn
 	ZPX              // $nn,X
@@ -17,10 +17,10 @@ const (
 	Ind              // ($nnnn)
 	IndX             // ($nn,X)
 	IndY             // ($nn),Y
-	Rel              // relativní skok
+	Rel              // relative branch
 )
 
-// Size vrací délku instrukce v bajtech pro daný režim.
+// Size returns the instruction length in bytes for the mode.
 func (m Mode) Size() int {
 	switch m {
 	case Imp, Acc:
@@ -32,20 +32,20 @@ func (m Mode) Size() int {
 	}
 }
 
-// Op popisuje jeden opkód.
+// Op describes one opcode.
 type Op struct {
 	Mnem   string
 	Mode   Mode
 	Cycles int
-	// PagePenalty: +1 cyklus při přechodu stránky (čtecí indexované režimy).
+	// PagePenalty: +1 cycle on page crossing (indexed read modes).
 	PagePenalty bool
 	Valid       bool
 }
 
-// Table je tabulka 256 opkódů; neplatné mají Valid=false.
+// Table holds the 256 opcodes; invalid ones have Valid=false.
 var Table [256]Op
 
-// Lookup mapuje (mnemonika, režim) na opkód.
+// Lookup maps (mnemonic, mode) to an opcode.
 var Lookup = map[string]map[Mode]byte{}
 
 func def(code byte, mn string, mode Mode, cyc int, pen bool) {
@@ -57,7 +57,7 @@ func def(code byte, mn string, mode Mode, cyc int, pen bool) {
 }
 
 func init() {
-	// Skupina ALU: ORA AND EOR ADC STA LDA CMP SBC
+	// ALU group: ORA AND EOR ADC STA LDA CMP SBC
 	alu := []struct {
 		mn   string
 		base byte
@@ -81,7 +81,7 @@ func init() {
 		}
 		def(a.base+0x15, a.mn, ZPX, 4, false)
 	}
-	// Posuny a INC/DEC
+	// Shifts and INC/DEC
 	shifts := []struct {
 		mn   string
 		base byte
@@ -102,7 +102,7 @@ func init() {
 	def(0xEE, "INC", Abs, 6, false)
 	def(0xFE, "INC", AbsX, 7, false)
 
-	// Větvení
+	// Branches
 	for mn, c := range map[string]byte{"BPL": 0x10, "BMI": 0x30, "BVC": 0x50, "BVS": 0x70, "BCC": 0x90, "BCS": 0xB0, "BNE": 0xD0, "BEQ": 0xF0} {
 		def(c, mn, Rel, 2, false)
 	}
@@ -157,7 +157,7 @@ func init() {
 	}
 }
 
-// IsBranch říká, zda je mnemonika podmíněný skok.
+// IsBranch reports whether the mnemonic is a conditional branch.
 func IsBranch(mn string) bool {
 	switch mn {
 	case "BPL", "BMI", "BVC", "BVS", "BCC", "BCS", "BNE", "BEQ":
@@ -166,7 +166,7 @@ func IsBranch(mn string) bool {
 	return false
 }
 
-// InvertBranch vrací opačnou podmínku skoku.
+// InvertBranch returns the inverted branch condition.
 func InvertBranch(mn string) string {
 	return map[string]string{
 		"BPL": "BMI", "BMI": "BPL", "BVC": "BVS", "BVS": "BVC",
