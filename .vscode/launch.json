@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "tantal run current .tantal file",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/tantal",
+      "args": ["run", "${file}"]
+    },
+    {
+      "name": "go test ./emu",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/emu"
+    }
+  ]
+}

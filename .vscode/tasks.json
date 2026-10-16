@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "go: build tantal",
+      "type": "shell",
+      "command": "go build -o tantal ./cmd/tantal",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "go: test",
+      "type": "shell",
+      "command": "go test ./...",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "tantal: build current file",
+      "type": "shell",
+      "command": "go run ./cmd/tantal build ${file}",
+      "problemMatcher": {
+        "owner": "tantal",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "^(?:error: )?(.+\\.tantal):(\\d+):(\\d+): (?:(warning): )?(.*)$",
+          "file": 1, "line": 2, "column": 3, "severity": 4, "message": 5
+        }
+      }
+    },
+    {
+      "label": "tantal: run current file",
+      "type": "shell",
+      "command": "go run ./cmd/tantal run ${file} --max 5000000 ${input:tantalInput}",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "tantalInput",
+      "type": "promptString",
+      "description": "Emulator input, e.g. --input PAD=00,01,03 (leave empty for none)",
+      "default": ""
+    }
+  ]
+}
