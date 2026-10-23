@@ -116,6 +116,7 @@ tantal run examples/bits.tantal --input PAD=C0
 - `interrupt irq/nmi proc`, including passing a BRK instruction on to the monitor at `$1C00`; `atomic`; inline `asm ... endasm` with access to Tantal variables.
 - `extern proc` for monitor routines; `pal2.tantal` with both RIOTs and the monitor routines is loaded automatically.
 - `wait <condition>`, `wait change X [from Y]`, `wait rising/falling X.n`, each with an optional `timeout N us|ms|s` and the `timedout` variable. The timeout uses the RIOT timer or, with `.timeout loop`, counts loop passes (works without a timer).
+- `delay N us|ms|s|cycles`: a busy wait, exact to the cycle for a constant; `delay t ms|s` with a variable count.
 - Ring buffer: `buf <- x`, `pop`, `buf[i]`, `last`, `len`, `full`, `clear`.
 - Multiplication, division and `mod` (powers of 2 as shifts and masks, otherwise a 16-bit runtime routine); division by zero gives all ones.
 - Global variables are initialized on every start; unused variables and procedures are left out of the program.

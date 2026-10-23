@@ -562,6 +562,30 @@ do
 od
 ```
 
+### Delays: `delay`
+
+`delay` waits a given time, keeping the CPU busy (it does not sleep, hence the name):
+
+```
+delay 500 us
+delay 20 ms
+delay 2 s
+delay 100 cycles       ; independent of the clock
+```
+
+**A constant delay is exact to the cycle**: from the end of the previous statement to the start of the next one it takes exactly the given time, computed from the target `clock` (`us` rounds to the nearest cycle). Up to 40 cycles it is a row of `NOP` (and one `BIT` for an odd count); longer delays load A, X and Y and call a small counting routine that the compiler keeps within one page, so the time does not depend on where the code lands. The shortest delay is 2 cycles; `delay 1 cycles` is an error. The longest is 60 s.
+
+**A variable delay** takes a `byte` or `card` count in `ms` or `s`:
+
+```
+delay t ms             ; t = 0 .. 65535
+delay pause s
+```
+
+Every millisecond takes exactly `clock/1000` cycles, plus 5 cycles once every 256 ms; the call itself adds about 30 cycles, and `s` about 70 more per second. `us` and `cycles` need a constant.
+
+`delay` changes A, X, Y and the flags. It uses no memory (except a counter for a variable `s`) and no timer, so it works in an interrupt handler too. Time spent in interrupt handlers during a delay is not counted, so the delay gets longer; the compiler warns when the program has an interrupt handler.
+
 ## 17. Interrupts and `atomic`
 
 An interrupt handler is a procedure marked `interrupt irq` or `interrupt nmi`. It has no parameters and no result, and it cannot be called. The compiler installs it in the vector (`$17FE` for IRQ, `$17FA` for NMI on the PAL-2), saves and restores registers and, for IRQ, enables interrupts with `CLI` at the end of startup. A `BRK` instruction is passed on to the monitor.
@@ -692,9 +716,9 @@ tantal run program.tantal --input PAD=@0:00,@500:01 --max 5000000 --trace
 ## 22. Quick reference
 
 **Keywords:**
-`and` `asm` `atomic` `bit` `bits` `byte` `card` `const` `do` `elif` `else` `endasm` `endatomic` `endproc` `exit` `extern` `fi` `for` `if` `interrupt` `irqsafe` `mod` `noinit` `not` `od` `or` `pointer` `proc` `readonly` `return` `ring` `shadow` `step` `string` `then` `to` `until` `wait` `while` `writeonly`
+`and` `asm` `atomic` `bit` `bits` `byte` `card` `const` `do` `elif` `else` `endasm` `endatomic` `endproc` `exit` `extern` `fi` `for` `if` `interrupt` `irqsafe` `mod` `noinit` `not` `od` `or` `pointer` `proc` `readonly` `return` `ring` `shadow` `step` `string` `then` `to` `until` `wait` `delay` `while` `writeonly`
 
-**Context words:** `file` (table from a file), `change` `from` `rising` `falling` `timeout` `us` `ms` `s` (in `wait`), `irq` `nmi` (in `interrupt`), `exclude` (in `.zp`).
+**Context words:** `file` (table from a file), `change` `from` `rising` `falling` `timeout` `us` `ms` `s` (in `wait`), `cycles` (in `delay`), `irq` `nmi` (in `interrupt`), `exclude` (in `.zp`).
 
 **Built-ins:** `lo` `hi` `byte()` `card()` `sizeof` `len` `pop` `last` `full` `clear` `mem[]` `timedout`
 
@@ -724,6 +748,7 @@ do ... od          do ... until c od          while c do ... od
 for i = a to b [step k] do ... od             for i = a until b do ... od
 exit       return [e]
 wait cond | change X [from v] | rising X.n | falling X.n  [timeout N us|ms|s]
+delay N us|ms|s|cycles                        delay t ms|s
 atomic ... endatomic                          asm ... endasm
 ```
 

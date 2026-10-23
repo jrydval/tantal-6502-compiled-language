@@ -183,6 +183,12 @@ type (
 	}
 	// Exit leaves a loop.
 	Exit struct{ Pos Pos }
+	// Delay is a busy wait: delay N us|ms|s|cycles.
+	Delay struct {
+		Pos  Pos
+		X    Expr
+		Unit string // us, ms, s, cycles
+	}
 	// Return returns from a procedure.
 	Return struct {
 		Pos Pos
@@ -218,6 +224,7 @@ func (s *Loop) P() Pos      { return s.Pos }
 func (s *While) P() Pos     { return s.Pos }
 func (s *For) P() Pos       { return s.Pos }
 func (s *Exit) P() Pos      { return s.Pos }
+func (s *Delay) P() Pos     { return s.Pos }
 func (s *Return) P() Pos    { return s.Pos }
 func (s *ExprStmt) P() Pos  { return s.Pos }
 func (s *Asm) P() Pos       { return s.Pos }

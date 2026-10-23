@@ -213,6 +213,17 @@ func (p *Parser) stmt() []Stmt {
 			return []Stmt{r}
 		case "wait":
 			return []Stmt{&ExprStmt{Pos: t.Pos, X: p.waitExpr()}}
+		case "delay":
+			p.next()
+			d := &Delay{Pos: t.Pos, X: p.mulExpr()}
+			u := p.ident()
+			switch u.Text {
+			case "us", "ms", "s", "cycles":
+				d.Unit = u.Text
+			default:
+				p.fail(u.Pos, "delay unit must be us, ms, s or cycles")
+			}
+			return []Stmt{d}
 		case "asm":
 			return []Stmt{p.asmBlock()}
 		case "atomic":

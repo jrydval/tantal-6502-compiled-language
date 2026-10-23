@@ -256,6 +256,7 @@ Direktivy určují, kam program patří a čeho se nesmí dotknout. Výchozí ho
 | `.end $03FF` | horní limit; překročení je chyba | konec RAM z targetu |
 | `.zp exclude $F0-$FF` | rozsah zero page, kam kompilátor nic nedá; může se opakovat | z targetu |
 | `.include "lcd.tantal"` | vložení dalšího souboru |  |
+| `.timeout timer` / `.timeout loop` | jak `wait ... timeout` měří čas: časovačem RIOT, nebo počítáním průchodů smyčkou bez časovače; viz Silné stránky, bod 1, Časový limit | z targetu (`timer`, když má `timeout.timer`) |
 | `.cycles <= 24` | hlídá nejhorší počet cyklů následujícího příkazu (smyčka = jedna iterace); bez limitu jen vypíše počet; viz Silné stránky, bod 2 | nic se nehlídá |
 
 Pravidla pro zero page:
@@ -648,11 +649,12 @@ wait rising PAD.7 timeout 500 us
 
 - Limit se zadává **časem** (`us`, `ms`, `s`), ne počtem průchodů. Doba průchodu čekací smyčky závisí na podmínce, takže počet průchodů by znamenal jiný čas po každé úpravě kódu.
 - Čas měří časovač uživatelského RIOT (v targetu `timeout.timer`). Smyčka jen testuje jeho stavový bit, takže průchod se prodlouží o 6 cyklů (z 10 na 16). Bez `timeout` zůstane smyčka beze změny.
+- Bez časovače: s `.timeout loop` (nebo v targetu bez `timeout.timer`) počítá smyčka své průchody 24bitovým čítačem. Počáteční hodnotu spočítá assembler po rozmístění kódu z nejkratšího průchodu, včetně přechodů přes stránku, takže limit nikdy nevyprší dřív. Průchod se prodlouží o 7 cyklů (z 10 na 17) a časovač zůstane volný. Čas strávený v přerušení se nezapočítá, limit se o něj prodlouží; kompilátor varuje.
 - Kompilátor zvolí dělitel časovače (1, 8, 64 nebo 1024 µs) podle délky limitu. Limity delší než 255 × 1024 µs (zhruba 261 ms) prodlouží softwarový čítač, který se obsluhuje jen při doběhnutí časovače, takže smyčku nezpomalí. Maximum je 60 s. Přesnost je ±1 tik zvoleného dělitele.
 - `timedout` je vyhrazená proměnná: 1, když poslední `wait` s limitem vypršel, jinak 0.
 - Při vypršení výraz vrátí poslední přečtenou hodnotu portu a proměnná z `from` zůstane beze změny.
 - Časové jednotky počítají s taktem z targetu (`clock`). PAL-2 běží na 1 MHz, stejně jako KIM-1.
-- Pokud program sám používá stejný časovač a zároveň `wait ... timeout`, je to chyba kompilace.
+- Kompilátor nekontroluje, jestli program používá stejný časovač i jinak. Když ho program současně s `wait ... timeout` nastavuje sám, například pro přerušení, nastavení se navzájem přepíší. Řešením je `.timeout loop`.
 
 Překlad (limit do 261 ms):
 
@@ -665,6 +667,32 @@ loop: LDA PAD
       BIT TIMSTAT      ; bit 7 = časovač doběhl
       BPL loop
       ; vypršelo: timedout = 1
+```
+
+#### Zpoždění: delay
+
+```
+delay 500 us
+delay 20 ms
+delay 2 s
+delay 100 cycles       ; nezávisle na taktu
+delay t ms             ; t je byte nebo card
+```
+
+- `delay` je aktivní čekání: procesor neusíná, proto ne `sleep`. Je to příkaz, ne výraz.
+- **Konstantní zpoždění je přesné na takt**: od konce předchozího příkazu do začátku dalšího trvá přesně zadanou dobu podle `clock` z targetu (`us` se zaokrouhlí na celý takt). Nejkratší je 2 takty (`delay 1 cycles` je chyba), nejdelší 60 s.
+- Do 40 taktů je to řada `NOP` (a jeden `BIT zp` pro lichý počet). Delší zpoždění nastaví A, X, Y a zavolá rutinu `__dly` se třemi vnořenými čítači. Kompilátor ji umístí tak, aby nepřekročila hranici stránky, a vložený kód nemá žádný skok, takže doba nezávisí na tom, kam kód padne.
+- **Proměnná doba** je `byte` nebo `card` v `ms` nebo `s`. Rutina `__dlyms` počítá milisekundy v X:Y; každá trvá přesně `clock/1000` taktů, jednou za 256 ms přibude 5 taktů. Volání přidá asi 30 taktů, `s` asi 70 taktů za sekundu. `us` a `cycles` s proměnnou nejdou.
+- `delay` mění A, X, Y a příznaky. Nepoužívá paměť (kromě čítače u proměnné doby v `s`) ani časovač, takže funguje i v přerušení. Čas strávený v přerušení se nezapočítá a zpoždění se prodlouží; kompilátor varuje, když program má obsluhu přerušení.
+
+Překlad `delay 500 us` při 1 MHz:
+
+```
+      LDA #$01
+      LDX #$01
+      LDY #$5E         ; 12 + 485 taktů v __dly
+      JSR __dly
+      BIT $00          ; zbývající 3 takty
 ```
 
 ### 2. Hlídání časování při kompilaci

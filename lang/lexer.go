@@ -44,7 +44,7 @@ var keywords = map[string]bool{
 	"string": true, "ring": true, "proc": true, "endproc": true, "return": true,
 	"if": true, "then": true, "elif": true, "else": true, "fi": true,
 	"do": true, "od": true, "while": true, "for": true, "to": true, "until": true, "step": true,
-	"exit": true, "wait": true, "asm": true, "endasm": true, "atomic": true, "endatomic": true,
+	"exit": true, "wait": true, "delay": true, "asm": true, "endasm": true, "atomic": true, "endatomic": true,
 	"interrupt": true, "extern": true, "and": true, "or": true, "not": true, "mod": true,
 	"noinit": true, "readonly": true, "writeonly": true, "shadow": true, "irqsafe": true,
 }

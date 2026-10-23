@@ -39,13 +39,14 @@ type Compiler struct {
 	data     []func()
 	lbl      int
 
-	mp, rt, timedOut *Var
-	needMul, needDiv bool
-	images           []func()
-	shared           map[string][]access
-	helperCtx        map[string]map[string]bool
-	cyclesWarned     bool
-	timeoutMode      string // set by .timeout
+	mp, rt, timedOut   *Var
+	needMul, needDiv   bool
+	needDly, needDlyMs bool
+	images             []func()
+	shared             map[string][]access
+	helperCtx          map[string]map[string]bool
+	cyclesWarned       bool
+	timeoutMode        string // set by .timeout
 }
 
 type bailout struct{ err error }

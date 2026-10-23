@@ -385,6 +385,80 @@ t2 = timedout
 	}
 }
 
+// between returns the cycles between the writes PBD = 1 and PBD = 2 in a program,
+// minus the cycles of the second write itself.
+func between(t *testing.T, src string, inputs ...string) int {
+	t.Helper()
+	m := run(t, src, inputs...)
+	var at []int
+	for _, w := range m.Writes {
+		if f := strings.Fields(w); f[1] == "$1702" {
+			n, _ := strconv.Atoi(f[0])
+			at = append(at, n)
+		}
+	}
+	if len(at) != 2 {
+		t.Fatalf("expected 2 writes to PBD, got %v", m.Writes)
+	}
+	return at[1] - at[0] - 6 // LDA #2, STA PBD
+}
+
+func TestDelayExact(t *testing.T) {
+	if got := between(t, "PBD = 1\nPBD = 2\n"); got != 0 {
+		t.Fatalf("baseline %d cycles", got)
+	}
+	var ns []int
+	for n := 2; n <= 400; n++ {
+		ns = append(ns, n)
+	}
+	ns = append(ns, 1279, 1280, 1281, 1302, 65535, 65536, 65543, 327_680, 328_000, 1_000_003, 5_000_000)
+	for _, n := range ns {
+		if got := between(t, fmt.Sprintf("PBD = 1\ndelay %d cycles\nPBD = 2\n", n)); got != n {
+			t.Errorf("delay %d cycles took %d", n, got)
+		}
+	}
+	units := map[string]int{"0 ms": 0, "250 us": 250, "3 ms": 3000, "2 s": 2_000_000, "17 us": 17}
+	for u, want := range units {
+		if got := between(t, "PBD = 1\ndelay "+u+"\nPBD = 2\n"); got != want {
+			t.Errorf("delay %s took %d, want %d", u, got, want)
+		}
+	}
+	// the routine must not cross a page wherever it lands
+	for org := 0x20D0; org < 0x2100; org++ {
+		src := fmt.Sprintf(".org $%04X\nPBD = 1\ndelay 1000 cycles\nPBD = 2\n", org)
+		if got := between(t, src); got != 1000 {
+			t.Errorf("org $%04X: delay 1000 cycles took %d", org, got)
+		}
+	}
+}
+
+func TestDelayVariable(t *testing.T) {
+	cases := []struct {
+		src      string
+		min, max int
+	}{
+		{"byte t = 0\nPBD = 1\ndelay t ms\nPBD = 2\n", 0, 40},
+		{"byte t = 5\nPBD = 1\ndelay t ms\nPBD = 2\n", 5000, 5040},
+		{"card t = 600\nPBD = 1\ndelay t ms\nPBD = 2\n", 600_010, 600_050},
+		{"byte t = 2\nPBD = 1\ndelay t s\nPBD = 2\n", 2_000_000, 2_000_150},
+		{"card t = 3\nPBD = 1\ndelay t s\nPBD = 2\n", 3_000_000, 3_000_250},
+		{"byte t = 2\nPBD = 1\ndelay t * 4 ms\nPBD = 2\n", 8000, 8050},
+	}
+	for _, c := range cases {
+		if got := between(t, c.src); got < c.min || got > c.max {
+			t.Errorf("%q took %d cycles, want %d-%d", c.src, got, c.min, c.max)
+		}
+	}
+	compileErr(t, "delay 1 cycles\n", "1 cycle cannot be made")
+	compileErr(t, "byte t\ndelay t us\n", "needs ms or s")
+	compileErr(t, "delay 61 s\n", "at most 60 s")
+	compileErr(t, "delay 5 min\n", "delay unit must be")
+	ws := compileWarn(t, "interrupt irq proc h()\nendproc\ndelay 5 ms\n")
+	if !hasWarn(ws, "not counted by delay") {
+		t.Errorf("warnings %v", ws)
+	}
+}
+
 func TestWaitCond(t *testing.T) {
 	m := run(t, `
 byte x

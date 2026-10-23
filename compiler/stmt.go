@@ -108,6 +108,8 @@ func (g *gen) stmt(s lang.Stmt) {
 		default:
 			g.fail(x.Pos, "expression has no effect")
 		}
+	case *lang.Delay:
+		g.delay(x)
 	case *lang.Asm:
 		g.asmBlock(x)
 	case *lang.Atomic:
@@ -1425,6 +1427,7 @@ func (c *Compiler) startup(handlers []*Inst, used map[*Var]bool) {
 func (c *Compiler) runtime() {
 	p := c.p
 	p.CurLine, p.CurFile = 0, ""
+	c.delayRuntime()
 	rt := func(k int) asm.Operand { return asm.S("__rt", k) }
 	if c.needMul {
 		p.Label("__mul16") // rt0..1 * rt2..3 -> A/X (rt4..5)

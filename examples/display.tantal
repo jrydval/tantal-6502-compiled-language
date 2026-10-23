@@ -40,9 +40,9 @@ proc seg7(byte c): byte
   return FONT[c - ' ']
 endproc
 
-; one pass over all six digits, about 4.2 ms; call it in a loop
+; one pass over all six digits, about 3.6 ms; call it in a loop
 proc refresh()
-  byte i, d, w
+  byte i, d
   SYS_PADD = $7F            ; segments as outputs
   SYS_PBDD = $1F            ; digit select and TTY out as outputs
   d = 9                     ; decoder value 4 in bits 1-4, bit 0 = 1
@@ -50,8 +50,7 @@ proc refresh()
     SYS_PA = 0              ; blank while switching, no ghosting
     SYS_PB = d
     SYS_PA = seg7(text[i])
-    for w = 0 until 40 do   ; about 0.6 ms per digit
-    od
+    delay 500 us            ; digit lit for 0.5 ms
     d += 2
   od
   SYS_PA = 0                ; nothing lit between calls

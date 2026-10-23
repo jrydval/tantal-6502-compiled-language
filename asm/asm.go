@@ -68,6 +68,7 @@ const (
 	KLabel
 	KBytes
 	KReserve
+	KAlign // padding so that the next Size bytes do not cross a page
 )
 
 // Item is one program item.
@@ -124,6 +125,9 @@ func (p *Program) Label(name string) { p.add(&Item{Kind: KLabel, Name: name}) }
 
 // Bytes adds data.
 func (p *Program) Bytes(data ...Operand) { p.add(&Item{Kind: KBytes, Data: data}) }
+
+// Align keeps the next span bytes within one page, padding with NOPs when needed.
+func (p *Program) Align(span int) { p.add(&Item{Kind: KAlign, Data: []Operand{N(span)}}) }
 
 // Reserve reserves space (emits no bytes into the binary; only at the end of the program).
 func (p *Program) Reserve(name string, size int) {
@@ -191,8 +195,17 @@ func (it *Item) size() int {
 		return it.Mode.Size()
 	case KBytes:
 		return len(it.Data)
-	case KReserve:
+	case KReserve, KAlign:
 		return it.Size
+	}
+	return 0
+}
+
+// alignPad returns the padding of an Align item at address addr.
+func (it *Item) alignPad(addr int) int {
+	span := it.Data[0].Off
+	if addr&0xFF+span > 256 {
+		return 256 - addr&0xFF
 	}
 	return 0
 }
@@ -250,6 +263,9 @@ func (p *Program) Assemble() (*Result, error) {
 		addr := p.Org
 		for _, it := range p.Items {
 			it.Addr = addr
+			if it.Kind == KAlign {
+				it.Size = it.alignPad(addr)
+			}
 			if it.Kind == KLabel || it.Kind == KReserve {
 				if _, dup := labels[it.Name]; dup && iter == 0 {
 					return nil, p.errAt(it, fmt.Errorf("label %q is defined twice", it.Name))
@@ -317,6 +333,10 @@ func (p *Program) Assemble() (*Result, error) {
 					return nil, p.errAt(it, err)
 				}
 				code = append(code, byte(v))
+			}
+		case KAlign:
+			for i := 0; i < it.Size; i++ {
+				code = append(code, 0xEA)
 			}
 		case KReserve:
 			continue
@@ -450,6 +470,10 @@ func Listing(res *Result, sources map[string][]string) string {
 			}
 		case KReserve:
 			fmt.Fprintf(&b, "%04X  .res %d     ; %s\n", it.Addr, it.Size, it.Name)
+		case KAlign:
+			if it.Size > 0 {
+				fmt.Fprintf(&b, "%04X  .fill %d     ; keeps the next routine within one page\n", it.Addr, it.Size)
+			}
 		}
 	}
 	flushSum()
