@@ -16,7 +16,7 @@ This file carries the design decisions and project state for anyone (human or AI
 - Memory map as on the KIM-1:
   - `$1700-$173F` user RIOT (6530/6532-style): `PAD $1700`, `PADD $1701`, `PBD $1702`, `PBDD $1703`, timer `$1704-$170F`.
   - `$1740-$177F` system RIOT: display, keypad, used by the monitor.
-  - `$1750-$177F` contents unknown (probably a gap or RIOT mirror); reserved in the target until verified.
+  - `$1750-$177F` repeats the system RIOT registers `$1740-$174F` every 16 bytes (verified on hardware: RIOT only decodes the low address bits). Reserved in the target so nothing is placed there and `@` addresses there warn.
   - `$1780-$17FF` RIOT RAM; `$17FA` NMI vector, `$17FE` IRQ vector.
   - `$1800-$1FFF` monitor ROM. `START $1C4F` returns to the monitor, `$1C00` handles BRK.
   - Zero page `$EF-$FF` is used by the monitor (`$F9-$FB` display buffer).
@@ -49,7 +49,7 @@ This file carries the design decisions and project state for anyone (human or AI
 - `int`/`sbyte`, `card` arrays and `card pointer`.
 - Zero page priority by weighted access count; packing `bit` flags.
 - `tantal upload` over serial; `tantal watch`.
-- Verify on real hardware: PAP format against the PAL-2 monitor, RIOT timer behavior, `$1750-$177F`, system RIOT display wiring.
+- Verify on real hardware: PAP format against the PAL-2 monitor, RIOT timer behavior (6530 vs. 6532: on a 6532, A4 selects timer vs. edge-detect writes), system RIOT display wiring.
 - Choose a license before publishing.
 
 ## Working on the code

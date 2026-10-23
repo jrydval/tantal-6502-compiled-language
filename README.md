@@ -153,7 +153,7 @@ These were made where the language design left the question open; all of them ca
 
 - **PAP format.** Record `;LLAAAA<data>CCCC`, where the checksum is the 16-bit sum of the count, address and data bytes; the last record is `;00NNNNCCCC` with the number of records. This follows the KIM-1 description but has not been tried against the PAL-2 monitor.
 - **`timeout` timing** assumes a 1 MHz clock and a timer at `$1704-$1707` that counts clock cycles like the 6530 in the KIM-1. In the emulator the timeout is accurate to one timer tick.
-- **The range `$1750-$177F`** is reserved in the target until it is verified.
+- **The range `$1750-$177F`** is verified: it repeats the system RIOT registers `$1740-$174F` every 16 bytes. It stays reserved in the target so the compiler places nothing there and warns about `@` addresses in it.
 
 ## Testing
 

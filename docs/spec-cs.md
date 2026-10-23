@@ -486,7 +486,7 @@ PAL-2 má mapu jako KIM-1, ale RAM (čip 128 KB, A16 na zemi, tedy celých 64 KB
 | `$0100–$01FF` | stack | nepoužívá se |
 | `$0200–$16FF` | RAM (5 376 B) | volné pro loader a uživatele; kompilátor sem nic nedává |
 | `$1700–$174F` | RIOT: porty A/B, směrové registry, časovače | I/O registry |
-| `$1750–$177F` | neznámé; pravděpodobně mezera nebo zrcadlo RAM či registrů RIOT | rezervováno; kompilátor sem nic nedá, @ adresa sem vyvolá varování |
+| `$1750–$177F` | zrcadla registrů systémového RIOTu `$1740–$174F` po 16 bajtech (ověřeno na hardwaru) | rezervováno; kompilátor sem nic nedá, @ adresa sem vyvolá varování |
 | `$1780–$17E6` | RAM v RIOT (103 B) | volitelně proměnné |
 | `$17E7–$17FF` | RAM monitoru: vektory NMI (`$17FA`) a IRQ (`$17FE`), parametry pásky | jen vektory |
 | `$1800–$1FFF` | ROM monitoru (2 KB) | volání rutin |
@@ -506,7 +506,7 @@ ram        = $0000-$16FF, $2000-$FFF7
 org        = $2000
 vars       = after-code        ; po vyčerpání zero page
 reserve    = $0200-$16FF       ; loader, uživatel
-reserve    = $1750-$177F       ; neověřeno, mezera nebo zrcadlo RIOT
+reserve    = $1750-$177F       ; zrcadla systémového RIOTu $1740-$174F
 zp.free    = $00-$EE
 vector.irq = $17FE
 vector.nmi = $17FA
@@ -771,7 +771,7 @@ Hardware PAL-2 (potřeba pro target soubor):
 - [x] Displej obnovuje program sám voláním rutiny monitoru, kdy a jak často chce. Kompilátor nic nevkládá.
 - [x] CPU: zatím jen NMOS 6502.
 - [x] Nahrávání: formát PAP přes sériovou linku 2400 bps.
-- [x] `Rozsah $1750–$177F: neznámý, pravděpodobně mezera nebo zrcadlo; v targetu rezervovaný, dokud se neověří.`
+- [x] `Rozsah $1750–$177F: ověřeno, zrcadla registrů systémového RIOTu $1740–$174F po 16 bajtech; v targetu zůstává rezervovaný.`
 
 Jazyk:
 
