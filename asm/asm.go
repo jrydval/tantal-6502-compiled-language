@@ -92,6 +92,8 @@ type Program struct {
 	Equ   map[string]int
 	// Alias: name = another symbol + offset (e.g. a procedure frame)
 	Alias map[string]Operand
+	// Loops are wait loops timed by counting passes.
+	Loops []*TimedLoop
 	// CurLine/CurFile are attached to every new item.
 	CurLine int
 	CurFile string
@@ -148,6 +150,7 @@ type Result struct {
 	Top    int // first address after reserved variables
 	Labels map[string]int
 	Items  []*Item
+	Loops  []*TimedLoop
 }
 
 func (p *Program) value(o Operand, labels map[string]int, strict bool) (int, error) {
@@ -274,7 +277,10 @@ func (p *Program) Assemble() (*Result, error) {
 		}
 	}
 
-	res := &Result{Org: p.Org, Labels: labels, Items: p.Items}
+	if err := p.resolveTimed(labels); err != nil {
+		return nil, err
+	}
+	res := &Result{Org: p.Org, Labels: labels, Items: p.Items, Loops: p.Loops}
 	var code []byte
 	emitted := p.Org
 	for _, it := range p.Items {

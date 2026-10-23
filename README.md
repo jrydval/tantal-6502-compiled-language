@@ -110,12 +110,12 @@ tantal run examples/bits.tantal --input PAD=C0
 - Types `byte`, `card` (16-bit unsigned), `byte pointer`, arrays `byte[n]`, `string` (length in the first byte), `ring byte[n]`, constants `const`.
 - Variables at a fixed address with `@`; qualifiers `readonly`, `writeonly`, `shadow`, `noinit`.
 - Bit aliases `bit`, bit fields `bits`, direct bit access `PAD.7`; bits 7 and 6 are tested with the `BIT` instruction.
-- Directives `.org`, `.end`, `.zp exclude`, `.include`, `.target`, `.cpu 6502`.
+- Directives `.org`, `.end`, `.zp exclude`, `.include`, `.target`, `.cpu 6502`, `.timeout timer|loop`.
 - `if/elif/else`, `do ... od`, `do ... until ... od`, `while`, `for ... to/until ... step`, `exit`.
 - Procedures: first three parameter bytes in A/X/Y, the rest in frame slots, return value in A or A/X. Frame overlay from the call graph, recursion check, `irqsafe` (a copy of the procedure for each context).
 - `interrupt irq/nmi proc`, including passing a BRK instruction on to the monitor at `$1C00`; `atomic`; inline `asm ... endasm` with access to Tantal variables.
 - `extern proc` for monitor routines; `pal2.tantal` with both RIOTs and the monitor routines is loaded automatically.
-- `wait <condition>`, `wait change X [from Y]`, `wait rising/falling X.n`, each with an optional `timeout N us|ms|s` and the `timedout` variable.
+- `wait <condition>`, `wait change X [from Y]`, `wait rising/falling X.n`, each with an optional `timeout N us|ms|s` and the `timedout` variable. The timeout uses the RIOT timer or, with `.timeout loop`, counts loop passes (works without a timer).
 - Ring buffer: `buf <- x`, `pop`, `buf[i]`, `last`, `len`, `full`, `clear`.
 - Multiplication, division and `mod` (powers of 2 as shifts and masks, otherwise a 16-bit runtime routine); division by zero gives all ones.
 - Global variables are initialized on every start; unused variables and procedures are left out of the program.
@@ -152,7 +152,7 @@ These were made where the language design left the question open; all of them ca
 ## To verify on real PAL-2 hardware
 
 - **PAP format.** Record `;LLAAAA<data>CCCC`, where the checksum is the 16-bit sum of the count, address and data bytes; the last record is `;00NNNNCCCC` with the number of records. This follows the KIM-1 description but has not been tried against the PAL-2 monitor.
-- **`timeout` timing** assumes a 1 MHz clock and a timer at `$1704-$1707` that counts clock cycles like the 6530 in the KIM-1. In the emulator the timeout is accurate to one timer tick.
+- **`timeout` timing** assumes a 1 MHz clock and a timer at `$1704-$1707` that counts clock cycles like the 6530 in the KIM-1. In the emulator the timeout is accurate to one timer tick. With `.timeout loop` the compiler computes the number of passes after layout from the shortest pass, so the timeout is never early; interrupts make it longer. A target without `timeout.timer`, or with `timeout = loop`, uses loop counting by default.
 - **The range `$1750-$177F`** is verified: it repeats the system RIOT registers `$1740-$174F` every 16 bytes. It stays reserved in the target so the compiler places nothing there and warns about `@` addresses in it.
 
 ## Testing

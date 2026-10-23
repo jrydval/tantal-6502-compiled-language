@@ -251,7 +251,7 @@ func (p *Parser) directive() Stmt {
 			p.fail(s.Pos, "expected a file name in quotes")
 		}
 		d.Text = s.Text
-	case "target", "cpu":
+	case "target", "cpu", "timeout":
 		s := p.next()
 		d.Text = strings.ToLower(s.Text)
 	case "cycles":

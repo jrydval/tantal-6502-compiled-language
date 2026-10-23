@@ -30,6 +30,7 @@ type Target struct {
 	Exit         int
 	Brk          int
 	TimeoutTimer int
+	TimeoutMode  string // "timer", "loop" or "" (timer when there is one)
 	ROM          Range
 	IO           Range
 	Include      string // file name
@@ -110,6 +111,11 @@ func LoadTarget(name string) (*Target, error) {
 			t.Brk = num(v)
 		case "timeout.timer":
 			t.TimeoutTimer = num(v)
+		case "timeout":
+			if v != "timer" && v != "loop" {
+				return nil, fmt.Errorf("%s.target:%d: timeout must be timer or loop", t.Name, n+1)
+			}
+			t.TimeoutMode = v
 		case "rom":
 			t.ROM = rng(v)
 		case "io":

@@ -1,8 +1,10 @@
 package emu
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -287,6 +289,100 @@ b = wait change PAD timeout 5 ms
 t2 = timedout
 `, "PAD=@0:00,@300:40")
 	expect(t, m, map[string]int{"a": 0x40, "t1": 0, "t2": 1})
+}
+
+// loopTimeout runs a wait with a loop-counted timeout between two writes to PBD
+// and returns the cycles between them.
+func loopTimeout(t *testing.T, prefix, wait string) (*Machine, int) {
+	t.Helper()
+	m := run(t, ".timeout loop\n"+prefix+`
+byte r, q
+PBD = 1
+r = `+wait+`
+PBD = 2
+`, "PAD=00")
+	var at []int
+	for _, w := range m.Writes {
+		if f := strings.Fields(w); f[1] == "$1702" {
+			n, _ := strconv.Atoi(f[0])
+			at = append(at, n)
+		}
+	}
+	if len(at) != 2 {
+		t.Fatalf("expected 2 writes to PBD, got %v", m.Writes)
+	}
+	if m.Byte("timedout") != 1 {
+		t.Errorf("%s: timedout = 0", wait)
+	}
+	return m, at[1] - at[0]
+}
+
+func TestLoopTimeout(t *testing.T) {
+	waits := []string{
+		"wait change PAD",
+		"wait change PAD from q",
+		"wait change PAD.2",
+		"wait rising PAD.7",
+		"wait falling PAD.6",
+		"wait rising PAD.1",
+		"wait PAD.3 = 1",
+		"wait PAD = 5 or q = 1 and PAD.0",
+	}
+	times := map[string]int{"20 us": 20, "1 ms": 1000, "250 ms": 250_000, "2 s": 2_000_000}
+	for _, w := range waits {
+		for unit, us := range times {
+			m, got := loopTimeout(t, "", w+" timeout "+unit)
+			pass := m.Res.Asm.Loops[0].MaxPass + 22
+			// the wait itself and the code around it take about 45 cycles
+			if got < us || got > us+pass+60 {
+				t.Errorf("%s timeout %s: %d cycles", w, unit, got)
+			}
+		}
+	}
+}
+
+// TestLoopTimeoutLayout moves the loop over a page boundary and makes its
+// branches long; the counter must account for the extra cycles.
+func TestLoopTimeoutLayout(t *testing.T) {
+	for org := 0x20C0; org < 0x2100; org += 3 {
+		_, got := loopTimeout(t, fmt.Sprintf(".org $%04X", org), "wait PAD = 5 or q = 1 timeout 10 ms")
+		if got < 10_000 || got > 10_100 {
+			t.Errorf("org $%04X: %d cycles", org, got)
+		}
+	}
+	var terms []string
+	for i := 1; i <= 25; i++ {
+		terms = append(terms, fmt.Sprintf("PAD = %d", i))
+	}
+	m, got := loopTimeout(t, "", "wait "+strings.Join(terms, " or ")+" timeout 50 ms")
+	long := false
+	for _, it := range m.Res.Asm.Items {
+		long = long || it.Long
+	}
+	if !long {
+		t.Error("expected long branches in the wait loop")
+	}
+	if got < 50_000 || got > 50_300 {
+		t.Errorf("long loop: %d cycles", got)
+	}
+}
+
+func TestLoopTimeoutChange(t *testing.T) {
+	m := run(t, `
+.timeout loop
+byte a, t1, b, t2
+a = wait rising PAD.6 timeout 1 ms
+t1 = timedout
+b = wait change PAD timeout 5 ms
+t2 = timedout
+`, "PAD=@0:00,@300:40")
+	expect(t, m, map[string]int{"a": 0x40, "t1": 0, "t2": 1})
+	compileErr(t, ".timeout loop\nproc f(): byte\n  return PAD\nendproc\nwait f() = 1 timeout 1 ms\n", "JSR in the wait condition")
+	compileErr(t, ".timeout soon\n", "expected .timeout timer or .timeout loop")
+	ws := compileWarn(t, ".timeout loop\ninterrupt irq proc h()\nendproc\nwait PAD.7 timeout 1 ms\n")
+	if !hasWarn(ws, "not counted by the loop timeout") {
+		t.Errorf("warnings %v", ws)
+	}
 }
 
 func TestWaitCond(t *testing.T) {

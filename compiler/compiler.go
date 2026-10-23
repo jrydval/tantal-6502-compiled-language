@@ -45,6 +45,7 @@ type Compiler struct {
 	shared           map[string][]access
 	helperCtx        map[string]map[string]bool
 	cyclesWarned     bool
+	timeoutMode      string // set by .timeout
 }
 
 type bailout struct{ err error }
@@ -172,6 +173,11 @@ func (c *Compiler) directive(d *lang.Directive, path string) {
 		if d.Text != "6502" {
 			c.fail(d.Pos, "v0.1 supports only .cpu 6502")
 		}
+	case "timeout":
+		if d.Text != "timer" && d.Text != "loop" {
+			c.fail(d.Pos, "expected .timeout timer or .timeout loop")
+		}
+		c.timeoutMode = d.Text
 	case "vars":
 		c.fail(d.Pos, ".vars is not supported yet; variables go to the zero page and after the code")
 	case "cycles":
@@ -942,6 +948,17 @@ func (c *Compiler) memMap(r *Result, frames map[string]int, framesInZP bool) str
 				}
 			}
 			b.WriteString("\n")
+		}
+	}
+	if len(r.Asm.Loops) > 0 {
+		fmt.Fprintf(&b, "\nTimeouts counted in loop passes (clock %d Hz):\n", c.T.Clock)
+		for _, t := range r.Asm.Loops {
+			pass := fmt.Sprintf("%d", t.MinPass)
+			if t.MaxPass > t.MinPass {
+				pass = fmt.Sprintf("%d-%d", t.MinPass, t.MaxPass)
+			}
+			fmt.Fprintf(&b, "  %s:%d  %d cycles wanted, %d passes, at least %d cycles (pass %s + counter)\n",
+				t.File, t.Line, t.Cycles, t.Count, t.Total, pass)
 		}
 	}
 	fmt.Fprintf(&b, "\nZero page (compiler):\n")

@@ -1,6 +1,8 @@
 package compiler
 
 import (
+	"fmt"
+
 	"github.com/jrydval/tantal-6502-compiled-language/asm"
 	"github.com/jrydval/tantal-6502-compiled-language/cpu"
 	"github.com/jrydval/tantal-6502-compiled-language/lang"
@@ -32,10 +34,24 @@ func planTimeout(us int) timeoutPlan {
 type waitCtx struct {
 	g      *gen
 	tmo    bool
+	loop   bool // timeout counted in loop passes, not with the timer
+	timed  *asm.TimedLoop
 	base   int
 	plan   timeoutPlan
 	tcnt   asm.Operand
 	tmoLbl string
+}
+
+// loopTimeout reports whether wait ... timeout counts loop passes instead of using the timer.
+func (c *Compiler) loopTimeout() bool {
+	mode := c.timeoutMode
+	if mode == "" {
+		mode = c.T.TimeoutMode
+	}
+	if mode == "" {
+		return c.T.TimeoutTimer < 0
+	}
+	return mode == "loop"
 }
 
 func (w *waitCtx) setup(x *lang.Wait) {
@@ -44,9 +60,10 @@ func (w *waitCtx) setup(x *lang.Wait) {
 		return
 	}
 	w.tmo = true
+	w.loop = g.c.loopTimeout()
 	w.base = g.c.T.TimeoutTimer
-	if w.base < 0 {
-		g.fail(x.Pos, "target %s has no timer for wait ... timeout", g.c.T.Name)
+	if !w.loop && w.base < 0 {
+		g.fail(x.Pos, "target %s has no timer for wait ... timeout; use .timeout loop", g.c.T.Name)
 	}
 	v, ok := g.c.constEval(x.Timeout)
 	if !ok || v <= 0 {
@@ -60,11 +77,29 @@ func (w *waitCtx) setup(x *lang.Wait) {
 	}
 	// convert to CPU cycles (the timer counts clock ticks)
 	cycles := int(int64(us) * int64(clk) / 1000000)
-	w.plan = planTimeout(cycles)
 	w.tmoLbl = g.newLabel("tmo")
 	to := asm.S(g.c.useTimedOut().Label, 0)
 	g.imm("LDA", 0)
 	g.mem("STA", to)
+	if w.loop {
+		// a 24-bit pass counter; the assembler computes its start value after layout
+		for _, p := range g.c.procs {
+			if p.Interrupt != "" {
+				g.warn(x.Pos, "time spent in interrupt handlers is not counted by the loop timeout; it gets longer")
+				break
+			}
+		}
+		w.tcnt = g.temp(3)
+		w.timed = &asm.TimedLoop{Cycles: cycles}
+		for i := range w.timed.Init {
+			w.timed.Init[i] = fmt.Sprintf("%s_n%d", w.tmoLbl, i)
+			g.e("LDA", cpu.Imm, asm.S(w.timed.Init[i], 0))
+			g.mem("STA", asm.S(w.tcnt.Sym, w.tcnt.Off+i))
+		}
+		g.p.Timed(w.timed)
+		return
+	}
+	w.plan = planTimeout(cycles)
 	if w.plan.reloads > 0 {
 		w.tcnt = g.temp(1)
 		g.imm("LDA", w.plan.reloads)
@@ -74,9 +109,23 @@ func (w *waitCtx) setup(x *lang.Wait) {
 	g.e("STA", cpu.Abs, asm.N(w.base+w.plan.off))
 }
 
-// check: timer test at the end of a wait loop pass.
-func (w *waitCtx) check(loop string) {
+// check: timeout test at the end of a wait loop pass; with last set, the
+// timeout code follows right after it.
+func (w *waitCtx) check(loop string, last bool) {
 	g := w.g
+	if w.loop {
+		count := g.newLabel("tcnt")
+		w.timed.Passes = append(w.timed.Passes, asm.Pass{Start: loop, Count: count})
+		g.label(count)
+		for i := 0; i < 3; i++ {
+			g.mem("DEC", asm.S(w.tcnt.Sym, w.tcnt.Off+i))
+			g.br("BNE", loop)
+		}
+		if !last {
+			g.jmp(w.tmoLbl)
+		}
+		return
+	}
 	g.e("BIT", cpu.Abs, asm.N(w.base+3))
 	g.br("BPL", loop)
 	if w.plan.reloads > 0 {
@@ -86,7 +135,7 @@ func (w *waitCtx) check(loop string) {
 		g.imm("LDA", 255)
 		g.e("STA", cpu.Abs, asm.N(w.base+3))
 		g.jmp(loop)
-	} else {
+	} else if !last {
 		g.jmp(w.tmoLbl)
 	}
 }
@@ -103,7 +152,9 @@ func (w *waitCtx) finish(read func(), done, end string) {
 		read()
 	}
 	g.jmp(end)
-	if w.plan.reloads > 0 {
+	if w.loop {
+		g.free(3)
+	} else if w.plan.reloads > 0 {
 		g.free(1)
 	}
 }
@@ -119,7 +170,7 @@ func (g *gen) genWait(x *lang.Wait) {
 		g.label(loop)
 		if w.tmo {
 			g.cond(x.Cond, done, true)
-			w.check(loop)
+			w.check(loop, true)
 		} else {
 			g.cond(x.Cond, loop, false)
 		}
@@ -174,7 +225,7 @@ func (g *gen) genWait(x *lang.Wait) {
 		g.mem("CMP", ref)
 		if w.tmo {
 			g.br("BNE", done)
-			w.check(loop)
+			w.check(loop, true)
 		} else {
 			g.br("BEQ", loop)
 		}
@@ -202,16 +253,22 @@ func (g *gen) genWait(x *lang.Wait) {
 		p1, p2 := g.newLabel("w1"), g.newLabel("w2")
 		usesX := false
 		// phase 1: wait for the opposite level; test branches when the bit is set/clear
+		// With a loop-counted timeout both phases share one pass counter, so
+		// phase 1 takes as many cycles per pass as phase 2 (LDA/TAX/AND).
+		same := w.loop && m != 0x80
 		test := func(set bool, target string) {
-			switch m {
-			case 0x80:
+			switch {
+			case m == 0x80:
 				g.mem("BIT", src)
 				g.br(map[bool]string{true: "BMI", false: "BPL"}[set], target)
-			case 0x40:
+			case m == 0x40 && !same:
 				g.mem("BIT", src)
 				g.br(map[bool]string{true: "BVS", false: "BVC"}[set], target)
 			default:
 				g.mem("LDA", src)
+				if same {
+					g.imp("TAX")
+				}
 				g.imm("AND", m)
 				g.br(map[bool]string{true: "BNE", false: "BEQ"}[set], target)
 			}
@@ -219,7 +276,7 @@ func (g *gen) genWait(x *lang.Wait) {
 		g.label(p1)
 		if w.tmo {
 			test(!rising, p2) // opposite level reached
-			w.check(p1)
+			w.check(p1, false)
 		} else {
 			test(rising, p1) // while still at the starting level
 		}
@@ -229,7 +286,7 @@ func (g *gen) genWait(x *lang.Wait) {
 			g.mem("LDA", src)
 			if w.tmo {
 				g.br(map[bool]string{true: "BMI", false: "BPL"}[rising], done)
-				w.check(p2)
+				w.check(p2, true)
 			} else {
 				g.br(map[bool]string{true: "BPL", false: "BMI"}[rising], p2)
 			}
@@ -240,7 +297,7 @@ func (g *gen) genWait(x *lang.Wait) {
 			g.imm("AND", m)
 			if w.tmo {
 				g.br(map[bool]string{true: "BNE", false: "BEQ"}[rising], done)
-				w.check(p2)
+				w.check(p2, true)
 			} else {
 				g.br(map[bool]string{true: "BEQ", false: "BNE"}[rising], p2)
 			}

@@ -531,7 +531,12 @@ v = wait change PAD from old   ; compare with old; wait stores the new value in 
 
 `change ... from` is meant for loops that must not miss a change between two waits: the comparison value is your own variable, and `wait` updates it. There are no hidden variables.
 
-**Timeout.** Any form can take `timeout N us|ms|s` (a constant up to 60 s). The timeout is measured with the user RIOT timer. Afterwards the built-in variable `timedout` is 1 if the time ran out, 0 otherwise.
+**Timeout.** Any form can take `timeout N us|ms|s` (a constant up to 60 s). Afterwards the built-in variable `timedout` is 1 if the time ran out, 0 otherwise.
+
+The timeout is measured in one of two ways, chosen with `.timeout` (see [Directives](#19-directives)):
+
+- `timer` (the default on PAL-2): the user RIOT timer counts the time. Interrupts do not change the result, but the program must not use the timer for anything else at the same time.
+- `loop`: the wait counts its own loop passes in a 24-bit counter. The compiler knows the cycles of every pass, including page crossings, so it works on any 6502 and leaves the timer free. The timeout never expires early; when the condition has paths of different length, it is computed from the shortest one. Time spent in interrupt handlers is not counted, so with interrupts the timeout gets longer (the compiler warns). A condition that calls a procedure or a runtime routine (multiplication, division) cannot be timed this way. The `.map` file shows the pass length and count of every such wait.
 
 ```
 v = wait rising PAD.6 timeout 500 ms
@@ -625,6 +630,7 @@ Directives start with `.` at the beginning of a line.
 | `.include "lib.tantal"` | include another file (relative to this one, at most once) |
 | `.target pal2` | fail unless compiling for this target |
 | `.cpu 6502` | the CPU; only `6502` in version 0.1 |
+| `.timeout loop` | how `wait ... timeout` measures time: `timer` (RIOT timer) or `loop` (counted loop passes); the default comes from the target |
 | `.cycles <= 40` | cycle limit for the next statement; parsed but not checked yet (the listing shows cycles) |
 
 ## 20. The PAL-2 target
@@ -635,7 +641,7 @@ The target file `pal2.tantal` is loaded automatically. It defines:
 
 **System RIOT** (display, keypad): `SYS_PA`, `SYS_PADD`, `SYS_PB`, `SYS_PBDD` at `$1740-$1743`.
 
-**Timer** (user RIOT). Writing starts a countdown with a divider of 1, 8, 64 or 1024 µs: `TIM1`, `TIM8`, `TIM64`, `TIM1024`, and the same with an interrupt: `TIM1I`, `TIM8I`, `TIM64I`, `TIM1024I`. Reading: `TIMCNT`, `TIMCNTI`, `TIMSTAT`, and the bit `TIMEOUT` (1 = finished). `wait ... timeout` uses this timer too.
+**Timer** (user RIOT). Writing starts a countdown with a divider of 1, 8, 64 or 1024 µs: `TIM1`, `TIM8`, `TIM64`, `TIM1024`, and the same with an interrupt: `TIM1I`, `TIM8I`, `TIM64I`, `TIM1024I`. Reading: `TIMCNT`, `TIMCNTI`, `TIMSTAT`, and the bit `TIMEOUT` (1 = finished). `wait ... timeout` uses this timer too, unless the program says `.timeout loop`.
 
 **Monitor routines:**
 
