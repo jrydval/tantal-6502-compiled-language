@@ -1,0 +1,69 @@
+; Display refresh for the PAL-2 (KIM-1 compatible six-digit LED display)
+; Shows the six characters at $10-$15 (text[0] = leftmost digit).
+; Encoding is restricted ASCII: '0'-'9', ' ', 'A'-'Z'; 'a'-'z' are shown
+; as upper case and any other code shows as a blank digit.
+;
+; Wiring as on the KIM-1 (not yet verified on the PAL-2):
+;   SYS_PA ($1740) bits 0-6 = segments a-g, 1 = lit
+;   SYS_PB ($1742) bits 1-4 = digit number for the 74145 decoder,
+;   values 4-9 select the six digits from the left; bit 0 is TTY out
+;   and is kept at 1 (idle).
+;
+;      a
+;     ---
+;  f |   | b
+;     -g-
+;  e |   | c
+;     ---
+;      d
+
+byte[6] text @ $10        ; the compiler keeps its variables out of $10-$15
+
+; segment patterns (gfedcba) for codes ' ' ($20) to 'Z' ($5A)
+const byte[] FONT = $00, $00, $00, $00, $00, $00, $00, $00,   ;  !"#$%&'
+  $00, $00, $00, $00, $00, $00, $00, $00,   ; ()*+,-./
+  $3F, $06, $5B, $4F, $66, $6D, $7D, $07,   ; 01234567
+  $7F, $6F, $00, $00, $00, $00, $00, $00,   ; 89:;<=>?
+  $00, $77, $7C, $39, $5E, $79, $71, $3D,   ; @ABCDEFG
+  $76, $30, $1E, $75, $38, $15, $54, $3F,   ; HIJKLMNO
+  $73, $67, $50, $6D, $78, $3E, $1C, $2A,   ; PQRSTUVW
+  $76, $6E, $5B                             ; XYZ
+
+; segment pattern of one character
+proc seg7(byte c): byte
+  if c >= 'a' and c <= 'z' then
+    c -= $20
+  fi
+  if c < ' ' or c > 'Z' then
+    return 0
+  fi
+  return FONT[c - ' ']
+endproc
+
+; one pass over all six digits, about 4.2 ms; call it in a loop
+proc refresh()
+  byte i, d, w
+  SYS_PADD = $7F            ; segments as outputs
+  SYS_PBDD = $1F            ; digit select and TTY out as outputs
+  d = 9                     ; decoder value 4 in bits 1-4, bit 0 = 1
+  for i = 0 until 6 do
+    SYS_PA = 0              ; blank while switching, no ghosting
+    SYS_PB = d
+    SYS_PA = seg7(text[i])
+    for w = 0 until 40 do   ; about 0.6 ms per digit
+    od
+    d += 2
+  od
+  SYS_PA = 0                ; nothing lit between calls
+endproc
+
+; demo: show "HELLO " and keep refreshing the display
+text[0] = 'H'
+text[1] = 'E'
+text[2] = 'L'
+text[3] = 'L'
+text[4] = 'O'
+text[5] = ' '
+do
+  refresh()
+od

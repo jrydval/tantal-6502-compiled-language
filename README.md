@@ -94,6 +94,7 @@ In the `examples` folder:
 | `strings.tantal` | strings, pointers, `mem[]`, const tables |
 | `analyzer.tantal` | logic analyzer: `wait change ... from ... timeout`, ring, display |
 | `interrupts.tantal` | timer IRQ handler, ring shared with an interrupt, `atomic` |
+| `display.tantal` | refreshing the six-digit LED display: 0-9, space and A-Z from `$10-$15` |
 
 Examples that read a port need input in the emulator:
 

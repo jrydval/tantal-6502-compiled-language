@@ -130,6 +130,51 @@ func TestExampleInterrupt(t *testing.T) {
 	expect(t, m, map[string]int{"ticks": 10, "n": 10, "got": 0})
 }
 
+// TestExampleDisplay runs one pass of the display refresh from display.tantal
+// and checks the digit selects and the segment patterns sent to the system RIOT.
+func TestExampleDisplay(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "examples", "display.tantal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lib, _, ok := strings.Cut(string(src), "; demo:")
+	if !ok {
+		t.Fatal("display.tantal has no demo section")
+	}
+	m := run(t, lib+`
+text[0] = '0'
+text[1] = '9'
+text[2] = ' '
+text[3] = 'A'
+text[4] = 'z'
+text[5] = '?'
+refresh()
+`)
+	// after each digit select, the first non-zero write to SYS_PA (or none)
+	var got []string
+	digit := ""
+	for _, w := range m.Writes {
+		f := strings.Fields(w)
+		switch f[1] {
+		case "$1742":
+			digit = f[4]
+			got = append(got, digit+"=$00")
+		case "$1740":
+			if digit != "" && f[4] != "$00" {
+				got[len(got)-1] = digit + "=" + f[4]
+				digit = ""
+			}
+		}
+	}
+	want := "$09=$3F $0B=$6F $0D=$00 $0F=$77 $11=$5B $13=$00"
+	if g := strings.Join(got, " "); g != want {
+		t.Errorf("digits %s, want %s", g, want)
+	}
+	if last := m.Writes[len(m.Writes)-1]; !strings.HasSuffix(last, "SYS_PA   <- $00") {
+		t.Errorf("display not blanked at the end: %s", last)
+	}
+}
+
 func TestForLoops(t *testing.T) {
 	m := run(t, `
 byte i, n1, n2, n3, n4, n5, n6
