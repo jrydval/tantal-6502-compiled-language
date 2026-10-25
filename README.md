@@ -9,15 +9,14 @@ This repository holds the first version (0.1) of the compiler. It is written in 
 ```
 ; Count changes on port A, give up after 2 s without a change
 ring byte[256] log           ; ring buffer of the last 256 samples
-byte PAD_OLD, cur
+byte cur
 card changes
 bit  LED = PBD.0             ; a named bit of an I/O register
 
 PBDD = $FF                   ; port B as output
-PAD_OLD = PAD
+cur = PAD
 do
-  cur = wait change PAD from PAD_OLD timeout 2 s
-  if timedout then exit fi
+  cur = wait change PAD from cur timeout 2 s then exit fi
   log <- cur
   changes += 1
   LED ^= 1
@@ -115,7 +114,7 @@ tantal run examples/bits.tantal --input PAD=C0
 - Procedures: first three parameter bytes in A/X/Y, the rest in frame slots, return value in A or A/X. Frame overlay from the call graph, recursion check, `irqsafe` (a copy of the procedure for each context).
 - `interrupt irq/nmi proc`, including passing a BRK instruction on to the monitor at `$1C00`; `atomic`; inline `asm ... endasm` with access to Tantal variables.
 - `extern proc` for monitor routines; `pal2.tantal` with both RIOTs and the monitor routines is loaded automatically.
-- `wait <condition>`, `wait change X [from Y]`, `wait rising/falling X.n`, each with an optional `timeout N us|ms|s` and the `timedout` variable. The timeout uses the RIOT timer or, with `.timeout loop`, counts loop passes (works without a timer).
+- `wait <condition>`, `wait change X [from e]`, `wait rising/falling X.n`, each with an optional `timeout N us|ms|s [then ... fi]`; on timeout the assignment or push is skipped and the block runs instead. The timeout uses the RIOT timer or, with `.timeout loop`, counts loop passes (works without a timer).
 - `delay N us|ms|s|cycles`: a busy wait, exact to the cycle for a constant; `delay t ms|s` with a variable count.
 - Ring buffer: `buf <- x`, `pop`, `buf[i]`, `last`, `len`, `full`, `clear`.
 - Multiplication, division and `mod` (powers of 2 as shifts and masks, otherwise a 16-bit runtime routine); division by zero gives all ones.

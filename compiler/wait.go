@@ -40,6 +40,8 @@ type waitCtx struct {
 	plan   timeoutPlan
 	tcnt   asm.Operand
 	tmoLbl string
+	skip   string      // where the timeout path continues
+	block  []lang.Stmt // timeout ... then block
 }
 
 // loopTimeout reports whether wait ... timeout counts loop passes instead of using the timer.
@@ -59,7 +61,12 @@ func (w *waitCtx) setup(x *lang.Wait) {
 	if x.Timeout == nil {
 		return
 	}
+	if g.tmoSkip == "" {
+		g.fail(x.Pos, "wait with a timeout must be a statement of its own")
+	}
 	w.tmo = true
+	w.skip, w.block = g.tmoSkip, x.OnTimeout
+	g.tmoSkip = ""
 	w.loop = g.c.loopTimeout()
 	w.base = g.c.T.TimeoutTimer
 	if !w.loop && w.base < 0 {
@@ -78,9 +85,6 @@ func (w *waitCtx) setup(x *lang.Wait) {
 	// convert to CPU cycles (the timer counts clock ticks)
 	cycles := int(int64(us) * int64(clk) / 1000000)
 	w.tmoLbl = g.newLabel("tmo")
-	to := asm.S(g.c.useTimedOut().Label, 0)
-	g.imm("LDA", 0)
-	g.mem("STA", to)
 	if w.loop {
 		// a 24-bit pass counter; the assembler computes its start value after layout
 		for _, p := range g.c.procs {
@@ -140,29 +144,30 @@ func (w *waitCtx) check(loop string, last bool) {
 	}
 }
 
-func (w *waitCtx) finish(read func(), done, end string) {
+// finish generates the timeout path: the block after then, and a jump past
+// the rest of the statement, so an assignment or push does not happen.
+func (w *waitCtx) finish(x *lang.Wait) {
 	g := w.g
 	if !w.tmo {
 		return
 	}
 	g.label(w.tmoLbl)
-	g.imm("LDA", 1)
-	g.mem("STA", asm.S(g.c.useTimedOut().Label, 0))
-	if read != nil {
-		read()
-	}
-	g.jmp(end)
 	if w.loop {
 		g.free(3)
 	} else if w.plan.reloads > 0 {
 		g.free(1)
 	}
+	g.stmts(w.block)
+	if !endsWithJump(w.block) {
+		g.jmp(w.skip)
+	}
+	g.at(x.Pos)
 }
 
 // genWait generates a wait; the result (the port byte) is in A.
 func (g *gen) genWait(x *lang.Wait) {
 	w := &waitCtx{g: g}
-	done, end := g.newLabel("wdone"), g.newLabel("wend")
+	done := g.newLabel("wdone")
 	switch x.Kind {
 	case "cond":
 		w.setup(x)
@@ -174,9 +179,8 @@ func (g *gen) genWait(x *lang.Wait) {
 		} else {
 			g.cond(x.Cond, loop, false)
 		}
-		w.finish(nil, done, end)
+		w.finish(x)
 		g.label(done)
-		g.label(end)
 	case "change":
 		var src asm.Operand
 		mask := 0xFF
@@ -194,25 +198,29 @@ func (g *gen) genWait(x *lang.Wait) {
 		default:
 			g.fail(x.Pos, "wait change needs a variable, register or bit")
 		}
-		var ref asm.Operand
+		// ref: the value the port is compared with, masked for a bit field
+		var ref part
 		usedTemp := false
-		if x.From != "" {
-			if g.lookup(x.From) == nil {
-				g.fail(x.Pos, "unknown name %q", x.From)
+		if x.From != nil && g.typeOf(x.From).wide() {
+			g.fail(x.From.P(), "from needs a byte value")
+		}
+		if v, ok := g.simpleFrom(x.From); ok && (mask == 0xFF || v.imm) {
+			ref = v.lo()
+			if v.imm && mask != 0xFF {
+				ref.op = asm.N(ref.op.Off & mask)
 			}
-			fv, ok := g.lookup(x.From).(*Var)
-			if !ok || !fv.Scalar() || fv.Type() != TByte || fv.ReadOnly {
-				g.fail(x.Pos, "from needs a byte variable")
-			}
-			ref = g.vop(fv)
 		} else {
-			ref = g.temp(1)
-			usedTemp = true
-			g.mem("LDA", src)
+			t := g.temp(1)
+			ref, usedTemp = part{op: t}, true
+			if x.From != nil {
+				g.genByte(x.From)
+			} else {
+				g.mem("LDA", src)
+			}
 			if mask != 0xFF {
 				g.imm("AND", mask)
 			}
-			g.mem("STA", ref)
+			g.mem("STA", t)
 		}
 		w.setup(x)
 		loop := g.newLabel("wait")
@@ -222,22 +230,18 @@ func (g *gen) genWait(x *lang.Wait) {
 			g.imp("TAX")
 			g.imm("AND", mask)
 		}
-		g.mem("CMP", ref)
+		g.part("CMP", ref)
 		if w.tmo {
 			g.br("BNE", done)
 			w.check(loop, true)
 		} else {
 			g.br("BEQ", loop)
 		}
-		w.finish(func() { g.mem("LDA", src) }, done, end)
+		w.finish(x)
 		g.label(done)
-		if x.From != "" {
-			g.mem("STA", ref)
-		}
 		if mask != 0xFF {
 			g.imp("TXA")
 		}
-		g.label(end)
 		if usedTemp {
 			g.free(1)
 		}
@@ -302,11 +306,22 @@ func (g *gen) genWait(x *lang.Wait) {
 				g.br(map[bool]string{true: "BEQ", false: "BNE"}[rising], p2)
 			}
 		}
-		w.finish(func() { g.mem("LDA", src) }, done, end)
+		w.finish(x)
 		g.label(done)
 		if usesX {
 			g.imp("TXA")
 		}
-		g.label(end)
 	}
+}
+
+// simpleFrom returns the comparison value of change ... from when it can be
+// used directly (a constant or a variable), without a temporary copy.
+func (g *gen) simpleFrom(e lang.Expr) (val, bool) {
+	if e == nil {
+		return val{}, false
+	}
+	if c, ok := g.c.constEval(e); ok {
+		return val{imm: true, op: asm.N(c & 0xFF), t: TByte}, true
+	}
+	return g.simple(e)
 }

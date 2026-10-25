@@ -87,7 +87,7 @@ A short block may stay on one line: `if x = 0 then exit fi`, `while b < 7 do b +
 
 **Strings** are in double quotes: `"HELLO"`. A `z` right after the closing quote makes a zero-terminated string: `"HELLO"z` (see [Strings](#10-strings)).
 
-**Reserved names** of built-in functions and variables cannot be redefined: `pop`, `last`, `len`, `full`, `clear`, `lo`, `hi`, `sizeof`, `mem`, `timedout`.
+**Reserved names** of built-in functions and variables cannot be redefined: `pop`, `last`, `len`, `full`, `clear`, `lo`, `hi`, `sizeof`, `mem`.
 
 ## 3. Variables and types
 
@@ -525,38 +525,49 @@ v = wait change PAD            ; until PAD differs from its value at the start
 v = wait change PAD.0          ; until one bit changes
 v = wait rising PAD.7          ; 0 -> 1 on bit 7
 v = wait falling PAD.7         ; 1 -> 0
-old = PAD
-v = wait change PAD from old   ; compare with old; wait stores the new value in old
+v = wait change PAD from old   ; until PAD differs from old
 ```
 
-`change ... from` is meant for loops that must not miss a change between two waits: the comparison value is your own variable, and `wait` updates it. There are no hidden variables.
+`change ... from` compares with a value of your choice instead of the value at the start of the wait. It is meant for loops that must not miss a change between two waits: keep the last recorded state in a variable and assign the result back to it. `wait` itself never writes to the variable; `from` is an ordinary byte expression (`from old`, `from old + 1`, `from $FF`), evaluated once before the wait. With a bit or a bit field (`wait change PAD.4..5 from old`), only those bits of the value are compared; the result is still the whole port byte.
 
-**Timeout.** Any form can take `timeout N us|ms|s` (a constant up to 60 s). Afterwards the built-in variable `timedout` is 1 if the time ran out, 0 otherwise.
+```
+cur = PAD
+do
+  cur = wait change PAD from cur   ; cur always holds the last state
+  ...
+od
+```
+
+**Timeout.** Any form can take `timeout N us|ms|s` (a constant up to 60 s), optionally followed by a block `then ... fi` that runs when the time runs out. On timeout the assignment or push the wait belongs to **does not happen**: the variable keeps its value and nothing goes into the ring. The block runs instead, and the program continues after the statement. There is no `timedout` flag to check afterwards; what should happen on a timeout belongs in the block.
+
+```
+v = wait rising PAD.6 timeout 500 ms then
+  OUTCH('T')                   ; v keeps its previous value
+fi
+log <- wait change PAD timeout 1 s then exit fi
+wait PAD.7 = 0 timeout 20 ms   ; wait at most 20 ms, no block
+```
+
+Because the assignment is skipped, a wait with a timeout must be the whole statement: `wait ...`, `x = wait ...` or `buf <- wait ...`. Inside a larger expression or an `if` condition the compiler reports an error. `exit` in the block leaves the enclosing loop, as in an `if`.
 
 The timeout is measured in one of two ways, chosen with `.timeout` (see [Directives](#19-directives)):
 
 - `timer` (the default on PAL-2): the user RIOT timer counts the time. Interrupts do not change the result, but the program must not use the timer for anything else at the same time.
 - `loop`: the wait counts its own loop passes in a 24-bit counter. The compiler knows the cycles of every pass, including page crossings, so it works on any 6502 and leaves the timer free. The timeout never expires early; when the condition has paths of different length, it is computed from the shortest one. Time spent in interrupt handlers is not counted, so with interrupts the timeout gets longer (the compiler warns). A condition that calls a procedure or a runtime routine (multiplication, division) cannot be timed this way. The `.map` file shows the pass length and count of every such wait.
 
-```
-v = wait rising PAD.6 timeout 500 ms
-if timedout then
-  OUTCH('T')
-fi
-```
+The timeout block is outside the wait loop, so it does not make a pass longer.
 
 A complete example, recording changes until the port goes quiet for 2 seconds:
 
 ```
 ring byte[256] log
-byte last_v, cur
+byte cur
 card changes
 
 PADD = $00                     ; port A as input
-last_v = PAD
+cur = PAD
 do
-  cur = wait change PAD from last_v timeout 2 s
-  if timedout then exit fi
+  cur = wait change PAD from cur timeout 2 s then exit fi
   log <- cur
   changes += 1
 od
@@ -720,7 +731,7 @@ tantal run program.tantal --input PAD=@0:00,@500:01 --max 5000000 --trace
 
 **Context words:** `file` (table from a file), `change` `from` `rising` `falling` `timeout` `us` `ms` `s` (in `wait`), `cycles` (in `delay`), `irq` `nmi` (in `interrupt`), `exclude` (in `.zp`).
 
-**Built-ins:** `lo` `hi` `byte()` `card()` `sizeof` `len` `pop` `last` `full` `clear` `mem[]` `timedout`
+**Built-ins:** `lo` `hi` `byte()` `card()` `sizeof` `len` `pop` `last` `full` `clear` `mem[]`
 
 **Declarations:**
 
@@ -747,7 +758,7 @@ if c then ... elif c then ... else ... fi
 do ... od          do ... until c od          while c do ... od
 for i = a to b [step k] do ... od             for i = a until b do ... od
 exit       return [e]
-wait cond | change X [from v] | rising X.n | falling X.n  [timeout N us|ms|s]
+wait cond | change X [from e] | rising X.n | falling X.n  [timeout N us|ms|s [then ... fi]]
 delay N us|ms|s|cycles                        delay t ms|s
 atomic ... endatomic                          asm ... endasm
 ```

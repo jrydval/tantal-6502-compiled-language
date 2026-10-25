@@ -212,7 +212,7 @@ func (p *Parser) stmt() []Stmt {
 			}
 			return []Stmt{r}
 		case "wait":
-			return []Stmt{&ExprStmt{Pos: t.Pos, X: p.waitExpr()}}
+			return []Stmt{&ExprStmt{Pos: t.Pos, X: p.waitExpr(true)}}
 		case "delay":
 			p.next()
 			d := &Delay{Pos: t.Pos, X: p.mulExpr()}
@@ -560,14 +560,14 @@ func (p *Parser) simpleStmt() Stmt {
 		switch t.Text {
 		case "=", "+=", "-=", "&=", "|=", "^=", "<<=", ">>=":
 			p.next()
-			return &Assign{Pos: start.Pos, Target: lv, Op: t.Text, Value: p.expr()}
+			return &Assign{Pos: start.Pos, Target: lv, Op: t.Text, Value: p.value()}
 		case "<-":
 			id, ok := lv.(*Ident)
 			if !ok {
 				p.fail(t.Pos, "<- needs the name of a ring buffer")
 			}
 			p.next()
-			return &Push{Pos: start.Pos, Ring: id.Name, Value: p.expr()}
+			return &Push{Pos: start.Pos, Ring: id.Name, Value: p.value()}
 		}
 	}
 	if c, ok := lv.(*Call); ok {
@@ -575,6 +575,19 @@ func (p *Parser) simpleStmt() Stmt {
 	}
 	p.fail(t.Pos, "expected an assignment or a call")
 	return nil
+}
+
+// value reads the right side of an assignment or push. A wait with a timeout
+// must be the whole value: on timeout the assignment does not happen.
+func (p *Parser) value() Expr {
+	if p.isKw("wait") {
+		i, nw := p.i, len(p.Warnings)
+		if w := p.waitExpr(true); w.Timeout != nil {
+			return w
+		}
+		p.i, p.Warnings = i, p.Warnings[:nw] // without a timeout, wait can be part of an expression
+	}
+	return p.expr()
 }
 
 // ---- expressions ----
@@ -681,7 +694,7 @@ func (p *Parser) unary() Expr {
 		id := p.ident()
 		return &Unary{Pos: t.Pos, Op: "@", X: &Ident{Pos: id.Pos, Name: id.Text}}
 	case p.isKw("wait"):
-		return p.waitExpr()
+		return p.waitExpr(false)
 	}
 	return p.postfix()
 }
@@ -753,7 +766,9 @@ func (p *Parser) postfix() Expr {
 	return nil
 }
 
-func (p *Parser) waitExpr() Expr {
+// waitExpr reads a wait; stmt reports whether it is the whole statement or
+// the whole value of an assignment or push, which a timeout requires.
+func (p *Parser) waitExpr(stmt bool) *Wait {
 	t := p.expectKw("wait")
 	w := &Wait{Pos: t.Pos}
 	if p.tok().Kind == IDENT {
@@ -764,7 +779,7 @@ func (p *Parser) waitExpr() Expr {
 			w.Target = p.postfix()
 			if p.tok().Kind == IDENT && p.tok().Text == "from" {
 				p.next()
-				w.From = p.ident().Text
+				w.From = p.bitOr()
 			}
 		case "rising", "falling":
 			w.Kind = p.next().Text
@@ -787,6 +802,14 @@ func (p *Parser) waitExpr() Expr {
 			w.Unit = u.Text
 		default:
 			p.fail(u.Pos, "timeout unit must be us, ms or s")
+		}
+		if !stmt {
+			p.fail(t.Pos, "wait with a timeout must be a statement of its own: wait ..., x = wait ... or buf <- wait ...")
+		}
+		if p.isKw("then") {
+			p.next()
+			w.OnTimeout = p.block(map[string]bool{"fi": true})
+			p.expectKw("fi")
 		}
 	}
 	return w

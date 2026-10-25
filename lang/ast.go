@@ -59,9 +59,12 @@ type (
 		Kind    string // "cond", "change", "rising", "falling"
 		Cond    Expr   // for "cond"
 		Target  Expr   // Ident or BitRef
-		From    string // variable for change ... from
+		From    Expr   // comparison value for change ... from, nil = value at the start
 		Timeout Expr   // timeout value, nil = no timeout
 		Unit    string // us, ms, s
+		// OnTimeout runs when the timeout expires, instead of the assignment
+		// or push the wait belongs to (timeout ... then ... fi).
+		OnTimeout []Stmt
 	}
 )
 
@@ -229,3 +232,19 @@ func (s *Return) P() Pos    { return s.Pos }
 func (s *ExprStmt) P() Pos  { return s.Pos }
 func (s *Asm) P() Pos       { return s.Pos }
 func (s *Atomic) P() Pos    { return s.Pos }
+
+// StmtWait returns the wait that forms the whole value of a statement
+// (wait ..., x = wait ..., buf <- wait ...), or nil.
+func StmtWait(s Stmt) *Wait {
+	var x Expr
+	switch s := s.(type) {
+	case *ExprStmt:
+		x = s.X
+	case *Assign:
+		x = s.Value
+	case *Push:
+		x = s.Value
+	}
+	w, _ := x.(*Wait)
+	return w
+}

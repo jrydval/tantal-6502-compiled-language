@@ -39,7 +39,7 @@ type Compiler struct {
 	data     []func()
 	lbl      int
 
-	mp, rt, timedOut   *Var
+	mp, rt             *Var
 	needMul, needDiv   bool
 	needDly, needDlyMs bool
 	images             []func()
@@ -197,7 +197,7 @@ func (c *Compiler) define(name string, pos lang.Pos, v any) {
 }
 
 var builtinNames = map[string]bool{"pop": true, "last": true, "len": true, "full": true, "clear": true,
-	"lo": true, "hi": true, "sizeof": true, "mem": true, "timedout": true}
+	"lo": true, "hi": true, "sizeof": true, "mem": true}
 
 func (c *Compiler) newVar(d *lang.VarDecl, proc *Proc) *Var {
 	v := &Var{Name: d.Name, Pos: d.Pos, Elem: TByte, Pointer: d.Type.Pointer, Array: d.Type.Array,
@@ -480,6 +480,9 @@ func (c *Compiler) collectLocals() {
 		var walk func(ss []lang.Stmt)
 		walk = func(ss []lang.Stmt) {
 			for _, s := range ss {
+				if w := lang.StmtWait(s); w != nil {
+					walk(w.OnTimeout)
+				}
 				switch d := s.(type) {
 				case *lang.VarDecl:
 					v := c.newVar(d, p)

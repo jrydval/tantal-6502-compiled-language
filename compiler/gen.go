@@ -13,7 +13,8 @@ type gen struct {
 	inst     *Inst
 	tempTop  int
 	loops    []string
-	atomicAt []int // loop depth when entering atomic
+	atomicAt []int  // loop depth when entering atomic
+	tmoSkip  string // end of the statement a wait ... timeout belongs to
 }
 
 // val is a simple operand: an immediate value or a memory location.
@@ -122,9 +123,6 @@ func (g *gen) free(n int) { g.tempTop -= n }
 // ---- symbols ----
 
 func (g *gen) lookup(name string) any {
-	if name == "timedout" {
-		return g.c.useTimedOut()
-	}
 	if g.inst.Proc != nil {
 		if v, ok := g.inst.Proc.Locals[name]; ok {
 			return v
@@ -144,15 +142,6 @@ func (g *gen) vop(v *Var) asm.Operand {
 		return asm.S(g.inst.FrameSym, v.Off)
 	}
 	return asm.S(v.Label, 0)
-}
-
-func (c *Compiler) useTimedOut() *Var {
-	if c.timedOut == nil {
-		c.timedOut = &Var{Name: "timedout", Elem: TByte, Label: "v_timedout", Hidden: true}
-		c.timedOut.Order = len(c.gvars)
-		c.gvars = append(c.gvars, c.timedOut)
-	}
-	return c.timedOut
 }
 
 // track records a read-modify-write of a possibly shared variable.

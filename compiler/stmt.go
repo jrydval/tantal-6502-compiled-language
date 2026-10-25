@@ -17,6 +17,11 @@ func (g *gen) stmts(ss []lang.Stmt) {
 
 func (g *gen) stmt(s lang.Stmt) {
 	g.at(s.P())
+	if w := lang.StmtWait(s); w != nil && w.Timeout != nil {
+		// on timeout the wait runs its block and skips the rest of the statement
+		g.tmoSkip = g.newLabel("wskip")
+		defer g.label(g.tmoSkip)
+	}
 	switch x := s.(type) {
 	case *lang.VarDecl:
 		if g.inst.Proc == nil {

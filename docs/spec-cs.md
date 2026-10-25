@@ -595,7 +595,7 @@ Nejvážnější jsou body 1 až 3: vedou k chybám, které se projeví až na h
 | 6 | Nerozlišování velkých a malých písmen | Kdyby existovaly pseudoregistry, nešla by proměnná `x`; `pad` a `PAD` je totéž | Vyřešeno: jazyk velikost písmen rozlišuje, klíčová slova jen malými |
 | 7 | `^` znamená ukazatel, dereferenci i XOR | Parser to rozliší, čtenář hůř | `Vyřešeno: ukazatel se používá jen indexem p[i], ^ zůstává XOR` |
 | 8 | Počáteční hodnoty při opakovaném spuštění | Na KIM-1 se program běžně spouští znovu z monitoru bez nahrání; proměnné mají staré hodnoty | `Vyřešeno: inicializace při každém startu, kvalifikátor noinit u proměnné` |
-| 9 | `wait` bez časového limitu | Když signál nepřijde, program visí a displej zhasne | `Vyřešeno: wait ... timeout 100 ms, měřeno časovačem RIOT; výsledek v proměnné timedout (viz Silné stránky, bod 1)` |
+| 9 | `wait` bez časového limitu | Když signál nepřijde, program visí a displej zhasne | `Vyřešeno: wait ... timeout 100 ms then ... fi, měřeno časovačem RIOT; při vypršení proběhne blok místo přiřazení (viz Silné stránky, bod 1)` |
 | 10 | Časování není vidět ze zdrojáku | Pro logický analyzátor je doba smyčky klíčová; optimalizace ji mohou měnit mezi verzemi kompilátoru | Cykly v listingu; kontrola `.cycles <= 20` (viz Silné stránky) |
 | 11 | Násobení, dělení, `mod` | Volají softwarovou rutinu, jsou pomalé a přidávají kód | Listing je označí; konstanty mocniny 2 se přeloží na posuny |
 | 12 | Jen jeden blok kódu (`.org`) | RAM PAL-2 přerušuje díra $1700–$1FFF | Vyřešeno rozvržením: kód od $2000 (56 KB souvisle), proměnné v zero page a za kódem; segmenty až bude potřeba víc |
@@ -611,7 +611,7 @@ Nejvíc hodnoty pro logický analyzátor mají první tři body: detekce hran, h
 wait rising PAD.7                    ; čeká na přechod 0 → 1
 wait falling PAD.7                   ; čeká na přechod 1 → 0
 cur = wait change PAD                ; změna proti stavu na začátku čekání
-cur = wait change PAD from PAD_OLD   ; změna proti PAD_OLD, wait ho aktualizuje
+cur = wait change PAD from cur       ; změna proti cur; přiřazení cur aktualizuje
 log <- wait rising PAD.7             ; wait je výraz
 ```
 
@@ -622,37 +622,37 @@ Kompilátor vygeneruje nejkratší možnou smyčku a její délku v cyklech uved
 | Zápis | Porovnává s | Změna během zpracování předchozího vzorku | Použití |
 | --- | --- | --- | --- |
 | `wait change PAD` | hodnotou přečtenou na začátku čekání (dočasná proměnná v overlay) | ztratí se | jednorázové čekání, rychlé pokusy |
-| `wait change PAD from PAD_OLD` | proměnnou `PAD_OLD` | zachytí se hned při dalším `wait` | analyzátor, smyčky vzorkování |
+| `wait change PAD from cur` | hodnotou výrazu za `from` | zachytí se hned při dalším `wait` | analyzátor, smyčky vzorkování |
 
-S `from` wait po změně do proměnné sám zapíše novou hodnotu. Kdyby to musel dělat program a zapomněl, každé další `wait` by se vrátilo okamžitě. Výchozí hodnotu (např. klidový stav linek) nastaví program před smyčkou.
+Za `from` stojí obyčejný bajtový výraz (`from cur`, `from cur + 1`, `from $FF`), který se vyhodnotí jednou před čekáním. `wait` do něj nikdy nezapisuje; je to čistý výraz. Poslední stav si program drží sám přiřazením výsledku: `cur = wait change PAD from cur`. Výchozí hodnotu (např. klidový stav linek) nastaví program před smyčkou. U bitu nebo bitového pole (`wait change PAD.4..5 from cur`) se porovnají jen tyto bity hodnoty; výsledkem je i tak celý bajt portu.
 
-Překlad s `from` (bez `from` je stejný, jen se na začátku přečte port do dočasné proměnné):
+Překlad `cur = wait change PAD from cur` (bez `from` je stejný, jen se na začátku přečte port do dočasné proměnné; výraz za `from`, který není proměnná ani konstanta, se před smyčkou uloží do dočasné proměnné):
 
 ```
 loop: LDA PAD
-      CMP PAD_OLD
+      CMP cur
       BEQ loop
-      STA PAD_OLD
-      STA cur
+      STA cur          ; přiřazení
 ```
 
 #### Časový limit
 
 ```
-cur = wait change PAD from PAD_OLD timeout 100 ms
-if timedout then
-  ...                          ; signál nepřišel
+cur = wait change PAD from cur timeout 100 ms then
+  ...                          ; signál nepřišel, cur se nezměnila
 fi
 
-wait rising PAD.7 timeout 500 us
+log <- wait rising PAD.7 timeout 1 s then exit fi
+wait rising PAD.7 timeout 500 us   ; čeká nejvýš 500 µs, bez bloku
 ```
 
 - Limit se zadává **časem** (`us`, `ms`, `s`), ne počtem průchodů. Doba průchodu čekací smyčky závisí na podmínce, takže počet průchodů by znamenal jiný čas po každé úpravě kódu.
 - Čas měří časovač uživatelského RIOT (v targetu `timeout.timer`). Smyčka jen testuje jeho stavový bit, takže průchod se prodlouží o 6 cyklů (z 10 na 16). Bez `timeout` zůstane smyčka beze změny.
 - Bez časovače: s `.timeout loop` (nebo v targetu bez `timeout.timer`) počítá smyčka své průchody 24bitovým čítačem. Počáteční hodnotu spočítá assembler po rozmístění kódu z nejkratšího průchodu, včetně přechodů přes stránku, takže limit nikdy nevyprší dřív. Průchod se prodlouží o 7 cyklů (z 10 na 17) a časovač zůstane volný. Čas strávený v přerušení se nezapočítá, limit se o něj prodlouží; kompilátor varuje.
 - Kompilátor zvolí dělitel časovače (1, 8, 64 nebo 1024 µs) podle délky limitu. Limity delší než 255 × 1024 µs (zhruba 261 ms) prodlouží softwarový čítač, který se obsluhuje jen při doběhnutí časovače, takže smyčku nezpomalí. Maximum je 60 s. Přesnost je ±1 tik zvoleného dělitele.
-- `timedout` je vyhrazená proměnná: 1, když poslední `wait` s limitem vypršel, jinak 0.
-- Při vypršení výraz vrátí poslední přečtenou hodnotu portu a proměnná z `from` zůstane beze změny.
+- Za limitem může stát blok `then ... fi`. **Při vypršení se přiřazení nebo `<-`, ke kterému `wait` patří, neprovede**: proměnná si nechá hodnotu a do bufferu nic nepřibude. Místo toho proběhne blok a program pokračuje za příkazem. `exit` v bloku opustí vnější smyčku jako v `if`.
+- Proto musí být `wait` s limitem celým příkazem: `wait ...`, `x = wait ...` nebo `buf <- wait ...`. Uvnitř delšího výrazu nebo v podmínce `if` je to chyba.
+- Jazyk nemá proměnnou `timedout`; co se má při vypršení stát, patří do bloku. Blok leží mimo čekací smyčku, takže průchod neprodlouží.
 - Časové jednotky počítají s taktem z targetu (`clock`). PAL-2 běží na 1 MHz, stejně jako KIM-1.
 - Kompilátor nekontroluje, jestli program používá stejný časovač i jinak. Když ho program současně s `wait ... timeout` nastavuje sám, například pro přerušení, nastavení se navzájem přepíší. Řešením je `.timeout loop`.
 
@@ -662,11 +662,14 @@ Překlad (limit do 261 ms):
       LDA #ticks
       STA TIM1024
 loop: LDA PAD
-      CMP PAD_OLD
+      CMP cur
       BNE done
       BIT TIMSTAT      ; bit 7 = časovač doběhl
       BPL loop
-      ; vypršelo: timedout = 1
+      ...              ; vypršelo: blok then ... fi
+      JMP next         ; přiřazení se přeskočí
+done: STA cur
+next:
 ```
 
 #### Zpoždění: delay
@@ -702,7 +705,7 @@ Pragma `.cycles` platí na **následující příkaz**: smyčku, `if`, blok nebo
 ```
 .cycles <= 24            ; jedna iterace smyčky
 do
-  cur = wait change PAD from PAD_OLD
+  cur = wait change PAD from cur
   log <- cur
 od
 

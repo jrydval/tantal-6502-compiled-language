@@ -6,9 +6,8 @@
 ;     --input PAD=@0:00,@500:01,@800:03,@1500:00,@1600:80
 
 ring byte[256] log noinit    ; survives a return to the monitor
-byte PAD_OLD                 ; last recorded port state
 card changes
-byte cur, i
+byte cur, i                  ; cur: last recorded port state
 
 proc show()
   DISP2 = hi(changes)
@@ -18,13 +17,12 @@ proc show()
 endproc
 
 PADD = $00                   ; port A as input
-PAD_OLD = PAD
+cur = PAD
 clear(log)
 
 .cycles <= 40
 do
-  cur = wait change PAD from PAD_OLD timeout 2 s
-  if timedout then exit fi
+  cur = wait change PAD from cur timeout 2 s then exit fi
   log <- cur
   changes += 1
 od

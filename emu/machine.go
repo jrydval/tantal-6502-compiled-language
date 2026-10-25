@@ -390,7 +390,7 @@ func (m *Machine) Report() string {
 		float64(m.CPU.Cycles)*1000/float64(m.Res.Target.Clock), m.Res.Target.Clock)
 	fmt.Fprintf(&b, "\nVariables:\n")
 	for _, v := range m.Res.Vars {
-		if v.Fixed || (v.Hidden && v.Name != "timedout") || strings.HasPrefix(v.Name, "__") {
+		if v.Fixed || v.Hidden || strings.HasPrefix(v.Name, "__") {
 			continue
 		}
 		a := v.Final

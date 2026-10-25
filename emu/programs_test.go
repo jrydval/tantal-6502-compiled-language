@@ -117,7 +117,7 @@ func TestExampleStrings(t *testing.T) {
 
 func TestExampleAnalyzer(t *testing.T) {
 	m := example(t, "analyzer.tantal", "PAD=@0:00,@500:01,@800:03,@1500:00,@1600:80")
-	expect(t, m, map[string]int{"changes": 4, "timedout": 1})
+	expect(t, m, map[string]int{"changes": 4, "cur": 0x80})
 	if got := m.TTY(); got != "01 03 00 80 \n" {
 		t.Errorf("TTY = %q", got)
 	}
@@ -282,13 +282,52 @@ h = wait change PAD.0
 
 func TestWaitTimeoutBit6(t *testing.T) {
 	m := run(t, `
-byte a, t1, b, t2
-a = wait rising PAD.6 timeout 1 ms
-t1 = timedout
-b = wait change PAD timeout 5 ms
-t2 = timedout
+byte a, t1, b = $55, t2
+a = wait rising PAD.6 timeout 1 ms then t1 = 1 fi
+b = wait change PAD timeout 5 ms then t2 = 1 fi
 `, "PAD=@0:00,@300:40")
-	expect(t, m, map[string]int{"a": 0x40, "t1": 0, "t2": 1})
+	expect(t, m, map[string]int{"a": 0x40, "t1": 0, "b": 0x55, "t2": 1})
+}
+
+func TestWaitTimeoutBlock(t *testing.T) {
+	// exit leaves the enclosing loop; the push does not happen on timeout
+	m := run(t, `
+ring byte[8] log
+byte n, cur, seen
+do
+  log <- wait change PAD timeout 1 ms then exit fi
+  n += 1
+od
+cur = PAD
+do
+  cur = wait change PAD from cur timeout 5 ms then
+    seen = cur
+    exit
+  fi
+od
+wait PAD.7 timeout 100 us
+`, "PAD=@0:00,@200:01,@400:03,@3000:07")
+	expect(t, m, map[string]int{"n": 2, "cur": 0x07, "seen": 0x07})
+	if got := m.Byte("log'count"); got != 2 {
+		t.Errorf("log'count = %d", got)
+	}
+	compileErr(t, "byte a\na = 1 + wait PAD.0 timeout 1 ms\n", "statement of its own")
+	compileErr(t, "if wait PAD.0 timeout 1 ms then fi\n", "statement of its own")
+	compileErr(t, "byte a\na = wait change PAD timeout 1 ms + 1\n", "after statement")
+	compileErr(t, "card c\nbyte a\na = wait change PAD from c\n", "from needs a byte value")
+}
+
+func TestWaitChangeFrom(t *testing.T) {
+	// from only reads its value: a variable, an expression, a constant, a bit field
+	m := run(t, `
+byte old = $10, a, b, c, d, e
+a = wait change PAD from old
+b = wait change PAD from old + 2
+c = wait change PAD from $13
+d = wait change PAD.4..5 from old
+e = wait change PAD from a
+`, "PAD=10,10,11,12,12,14,13,13,37,15,20,11,15")
+	expect(t, m, map[string]int{"old": 0x10, "a": 0x11, "b": 0x14, "c": 0x37, "d": 0x20, "e": 0x15})
 }
 
 // loopTimeout runs a wait with a loop-counted timeout between two writes to PBD
@@ -296,9 +335,9 @@ t2 = timedout
 func loopTimeout(t *testing.T, prefix, wait string) (*Machine, int) {
 	t.Helper()
 	m := run(t, ".timeout loop\n"+prefix+`
-byte r, q
+byte r, q, hit
 PBD = 1
-r = `+wait+`
+r = `+wait+` then hit = 1 fi
 PBD = 2
 `, "PAD=00")
 	var at []int
@@ -311,8 +350,8 @@ PBD = 2
 	if len(at) != 2 {
 		t.Fatalf("expected 2 writes to PBD, got %v", m.Writes)
 	}
-	if m.Byte("timedout") != 1 {
-		t.Errorf("%s: timedout = 0", wait)
+	if m.Byte("hit") != 1 || m.Byte("r") != 0 {
+		t.Errorf("%s: hit = %d, r = %d", wait, m.Byte("hit"), m.Byte("r"))
 	}
 	return m, at[1] - at[0]
 }
@@ -370,13 +409,11 @@ func TestLoopTimeoutLayout(t *testing.T) {
 func TestLoopTimeoutChange(t *testing.T) {
 	m := run(t, `
 .timeout loop
-byte a, t1, b, t2
-a = wait rising PAD.6 timeout 1 ms
-t1 = timedout
-b = wait change PAD timeout 5 ms
-t2 = timedout
+byte a, t1, b = $55, t2
+a = wait rising PAD.6 timeout 1 ms then t1 = 1 fi
+b = wait change PAD timeout 5 ms then t2 = 1 fi
 `, "PAD=@0:00,@300:40")
-	expect(t, m, map[string]int{"a": 0x40, "t1": 0, "t2": 1})
+	expect(t, m, map[string]int{"a": 0x40, "t1": 0, "b": 0x55, "t2": 1})
 	compileErr(t, ".timeout loop\nproc f(): byte\n  return PAD\nendproc\nwait f() = 1 timeout 1 ms\n", "JSR in the wait condition")
 	compileErr(t, ".timeout soon\n", "expected .timeout timer or .timeout loop")
 	ws := compileWarn(t, ".timeout loop\ninterrupt irq proc h()\nendproc\nwait PAD.7 timeout 1 ms\n")
